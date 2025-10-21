@@ -1,6 +1,6 @@
 {
   "framework": "nextjs",
-  "buildCommand": "cd ../.. && pnpm run build --filter=web",
+  "buildCommand": "cd ../../ && pnpm build",
   "devCommand": "pnpm run dev",
   "installCommand": "pnpm install",
   "regions": ["iad1"],
