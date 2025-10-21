@@ -1,4 +1,8 @@
-name: Release
+# Alternative: Bundled CLI (no sbom-core published)
+# This bundles sbom-core into the CLI package
+# To use: rename to release.yml
+
+name: Release (Bundled)
 
 on:
   push:
@@ -32,7 +36,6 @@ jobs:
         with:
           node-version: "20"
           cache: "pnpm"
-          registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -58,38 +61,52 @@ jobs:
             echo "Tag v${{ steps.get_version.outputs.version }} does not exist"
           fi
 
-      - name: Prepare packages for npm
+      - name: Bundle sbom-core into CLI
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          # Replace workspace:* dependencies with actual versions
           cd packages/cli
-          CORE_VERSION=$(node -p "require('../sbom-core/package.json').version")
-
-          # Update CLI package.json to reference the npm version of sbom-core
+          
+          # Install esbuild for bundling
+          npm install --no-save esbuild
+          
+          # Bundle the CLI with sbom-core inlined
+          npx esbuild src/cli.ts \
+            --bundle \
+            --platform=node \
+            --target=node20 \
+            --format=esm \
+            --outfile=dist/cli-bundled.js \
+            --banner:js="#!/usr/bin/env node" \
+            --external:commander \
+            --external:ora \
+            --external:chalk \
+            --external:yaml \
+            --external:cheerio
+          
+          # Replace the original cli.js with bundled version
+          mv dist/cli-bundled.js dist/cli.js
+          chmod +x dist/cli.js
+          
+          # Update package.json to remove workspace dependency and add core's deps
           node -e "
             const pkg = require('./package.json');
-            pkg.dependencies['@billofmaterial/sbom-core'] = '^' + '$CORE_VERSION';
+            const corePkg = require('../sbom-core/package.json');
+            
+            // Remove workspace dependency
+            delete pkg.dependencies['@billofmaterial/sbom-core'];
+            
+            // Add sbom-core's dependencies
+            Object.assign(pkg.dependencies, corePkg.dependencies);
+            
+            // Update files to only include dist
+            pkg.files = ['dist', 'README.md'];
+            
             require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2));
           "
-
-          echo "✅ Updated CLI dependencies"
-          echo "CLI will depend on @billofmaterial/sbom-core@^$CORE_VERSION"
-
-      - name: Publish @billofmaterial/sbom-core
-        if: steps.check_tag.outputs.exists == 'false'
-        working-directory: packages/sbom-core
-        run: |
-          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
-          npm publish --access public
-          echo "✅ Published @billofmaterial/sbom-core"
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Wait for npm propagation
-        if: steps.check_tag.outputs.exists == 'false'
-        run: |
-          echo "Waiting for npm to propagate the package..."
-          sleep 30
+          
+          echo "✅ Bundled sbom-core into CLI"
+          echo "Package contents:"
+          ls -lah dist/
 
       - name: Publish billofmaterial CLI
         if: steps.check_tag.outputs.exists == 'false'
@@ -97,7 +114,7 @@ jobs:
         run: |
           echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
           npm publish --access public
-          echo "✅ Published billofmaterial CLI"
+          echo "✅ Published billofmaterial CLI (bundled)"
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -111,8 +128,6 @@ jobs:
           else
             RELEASE_NOTES=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)")
           fi
-          echo "Release Notes:"
-          echo "$RELEASE_NOTES"
           echo "notes<<EOF" >> $GITHUB_OUTPUT
           echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -124,7 +139,6 @@ jobs:
             --title "Release v${{ steps.get_version.outputs.version }}" \
             --notes "${{ steps.release_notes.outputs.notes }}" \
             --latest
-          echo "✅ Created GitHub release v${{ steps.get_version.outputs.version }}"
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -133,20 +147,16 @@ jobs:
         run: |
           echo "## 🚀 Release v${{ steps.get_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Published Packages" >> $GITHUB_STEP_SUMMARY
-          echo "- [@billofmaterial/sbom-core](https://www.npmjs.com/package/@billofmaterial/sbom-core)" >> $GITHUB_STEP_SUMMARY
-          echo "- [billofmaterial](https://www.npmjs.com/package/billofmaterial)" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Published Package (Bundled)" >> $GITHUB_STEP_SUMMARY
+          echo "- [billofmaterial](https://www.npmjs.com/package/billofmaterial) (includes bundled sbom-core)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🧪 Test the CLI" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
           echo "npx billofmaterial@latest generate" >> $GITHUB_STEP_SUMMARY
-          echo "# or" >> $GITHUB_STEP_SUMMARY
-          echo "pnpm dlx billofmaterial@latest generate" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Skip release (tag exists)
         if: steps.check_tag.outputs.exists == 'true'
         run: |
           echo "⏭️ Skipping release - version v${{ steps.get_version.outputs.version }} already published"
-          echo "## ⏭️ Release Skipped" >> $GITHUB_STEP_SUMMARY
-          echo "Version v${{ steps.get_version.outputs.version }} already exists" >> $GITHUB_STEP_SUMMARY
+
