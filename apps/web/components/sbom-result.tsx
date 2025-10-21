@@ -1,11 +1,15 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { MDXRemote } from 'next-mdx-remote';
+import { serialize } from 'next-mdx-remote/serialize';
+import remarkGfm from 'remark-gfm';
 import { Card } from '@workspace/ui/components/card';
 import { Button } from '@workspace/ui/components/button';
 import { Textarea } from '@workspace/ui/components/textarea';
 import { Badge } from '@workspace/ui/components/badge';
-import { Download, Copy, CheckCheck, Package, AlertTriangle, Scale, Archive } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@workspace/ui/components/tabs';
+import { Download, Copy, CheckCheck, Package, AlertTriangle, Scale, Archive, Eye, Code2, Ghost } from 'lucide-react';
 
 interface SBOMResultProps {
   result: any;
@@ -13,6 +17,19 @@ interface SBOMResultProps {
 
 export function SBOMResult({ result }: SBOMResultProps) {
   const [copied, setCopied] = useState(false);
+  const [mdxSource, setMdxSource] = useState<any>(null);
+
+  // Serialize markdown to MDX on component mount
+  useEffect(() => {
+    if (result.markdown) {
+      serialize(result.markdown, {
+        mdxOptions: {
+          development: false,
+          remarkPlugins: [remarkGfm],
+        }
+      }).then(setMdxSource);
+    }
+  }, [result.markdown]);
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(result.markdown);
@@ -38,13 +55,13 @@ export function SBOMResult({ result }: SBOMResultProps) {
     <div className="space-y-6">
       {/* Summary Cards */}
       {insights && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          <Card className="p-4 hover:shadow-md transition-shadow">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card className="p-5 hover:shadow-md transition-shadow">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-primary/10 rounded-lg">
                 <Package className="w-5 h-5 text-primary" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Dependencies</p>
                 <p className="text-2xl font-bold">{insights.metrics.totalDependencies}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -54,12 +71,12 @@ export function SBOMResult({ result }: SBOMResultProps) {
             </div>
           </Card>
 
-          <Card className="p-4 hover:shadow-md transition-shadow">
+          <Card className="p-5 hover:shadow-md transition-shadow">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-green-500/10 rounded-lg">
                 <CheckCheck className="w-5 h-5 text-green-600 dark:text-green-400" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Security Score</p>
                 <p className="text-2xl font-bold">{insights.metrics.averageSecurityScore}/100</p>
                 {insights.quickWins && insights.quickWins.length > 0 && (
@@ -71,12 +88,12 @@ export function SBOMResult({ result }: SBOMResultProps) {
             </div>
           </Card>
 
-          <Card className="p-4 hover:shadow-md transition-shadow">
+          <Card className="p-5 hover:shadow-md transition-shadow">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-red-500/10 rounded-lg">
                 <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">High Risk</p>
                 <p className="text-2xl font-bold">{insights.topRisks.length}</p>
                 {insights.licenseIssues.length > 0 && (
@@ -88,12 +105,12 @@ export function SBOMResult({ result }: SBOMResultProps) {
             </div>
           </Card>
 
-          <Card className="p-4 hover:shadow-md transition-shadow">
+          <Card className="p-5 hover:shadow-md transition-shadow">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-orange-500/10 rounded-lg">
                 <Package className="w-5 h-5 text-orange-600 dark:text-orange-400" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Outdated</p>
                 <p className="text-2xl font-bold">
                   {result.outdatedPackages ? Object.keys(result.outdatedPackages).length : 0}
@@ -103,23 +120,6 @@ export function SBOMResult({ result }: SBOMResultProps) {
                     updates available
                   </p>
                 )}
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-4 hover:shadow-md transition-shadow">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-500/10 rounded-lg">
-                <Archive className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Bundle Size</p>
-                <p className="text-2xl font-bold">
-                  {Math.round(insights.totalBundleSize / 1024)} MB
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[120px]">
-                  {insights.heaviestDependencies[0]?.name || 'N/A'}
-                </p>
               </div>
             </div>
           </Card>
@@ -136,7 +136,7 @@ export function SBOMResult({ result }: SBOMResultProps) {
                 <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
                 Top Security Risks ({insights.topRisks.length})
               </h3>
-              <div className="space-y-3 max-h-96 overflow-y-auto">
+              <div className="space-y-3 max-h-80 overflow-y-auto">
                 {insights.topRisks.map((risk: any) => (
                   <div key={risk.name} className="p-3 bg-destructive/5 border border-destructive/20 rounded-lg">
                     <div className="flex items-center justify-between mb-2">
@@ -164,7 +164,7 @@ export function SBOMResult({ result }: SBOMResultProps) {
               <p className="text-sm text-muted-foreground mb-4">
                 Easy updates that improve security
               </p>
-              <div className="space-y-3 max-h-96 overflow-y-auto">
+              <div className="space-y-3 max-h-80 overflow-y-auto">
                 {insights.quickWins.map((win: any) => (
                   <div key={win.name} className="p-3 bg-background rounded-lg border">
                     <div className="flex items-center justify-between mb-2">
@@ -189,7 +189,7 @@ export function SBOMResult({ result }: SBOMResultProps) {
                 <Archive className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 Largest Dependencies ({insights.heaviestDependencies.length})
               </h3>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
+              <div className="space-y-2 max-h-80 overflow-y-auto">
                 {insights.heaviestDependencies.map((dep: any) => (
                   <div key={dep.name} className="flex items-center justify-between p-2 bg-muted/50 rounded">
                     <span className="text-sm font-medium truncate flex-1 mr-2">{dep.name}</span>
@@ -213,7 +213,7 @@ export function SBOMResult({ result }: SBOMResultProps) {
               <p className="text-sm text-muted-foreground mb-4">
                 Packages with newer versions available
               </p>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
+              <div className="space-y-2 max-h-80 overflow-y-auto">
                 {Object.entries(result.outdatedPackages).map(([name, info]: [string, any]) => (
                   <div key={name} className="p-2 bg-orange-500/5 border border-orange-500/20 rounded">
                     <div className="flex items-center justify-between mb-1">
@@ -238,7 +238,7 @@ export function SBOMResult({ result }: SBOMResultProps) {
                 <Scale className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
                 License Concerns ({insights.licenseIssues.length})
               </h3>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
+              <div className="space-y-2 max-h-80 overflow-y-auto">
                 {insights.licenseIssues.map((issue: any) => (
                   <div key={issue.name} className="flex items-center justify-between p-2 bg-yellow-500/5 border border-yellow-500/20 rounded">
                     <span className="text-sm font-medium truncate flex-1 mr-2">{issue.name}</span>
@@ -253,12 +253,13 @@ export function SBOMResult({ result }: SBOMResultProps) {
           {insights.abandonedPackages.length > 0 && (
             <Card className="p-6 border-purple-500/20">
               <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                🏚️ Potentially Abandoned ({insights.abandonedPackages.length})
+                <Ghost className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                Potentially Abandoned ({insights.abandonedPackages.length})
               </h3>
               <p className="text-sm text-muted-foreground mb-4">
                 Not updated in over 2 years
               </p>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
+              <div className="space-y-2 max-h-80 overflow-y-auto">
                 {insights.abandonedPackages.map((pkg: any) => (
                   <div key={pkg.name} className="p-2 bg-purple-500/5 border border-purple-500/20 rounded">
                     <div className="flex items-center justify-between mb-1">
@@ -316,11 +317,180 @@ export function SBOMResult({ result }: SBOMResultProps) {
           </div>
         </div>
 
-        <Textarea
-          value={result.markdown}
-          readOnly
-          className="font-mono text-xs min-h-[400px] resize-none"
-        />
+        <Tabs defaultValue="preview" className="w-full">
+          <div className="flex justify-start">
+            <TabsList>
+              <TabsTrigger value="preview" className="gap-2 cursor-pointer">
+                <Eye className="w-4 h-4" />
+                Preview
+              </TabsTrigger>
+              <TabsTrigger value="raw" className="gap-2 cursor-pointer">
+                <Code2 className="w-4 h-4" />
+                Raw Markdown
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <TabsContent value="preview" className="mt-4">
+            <div className="markdown-preview min-h-[300px] max-h-[500px] overflow-y-auto p-6 bg-muted/30 rounded-lg border">
+              {mdxSource ? (
+                <MDXRemote {...mdxSource} />
+              ) : (
+                <div className="flex items-center justify-center h-64 text-muted-foreground">
+                  <div className="text-center">
+                    <Package className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                    <p>Loading preview...</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
+          <style jsx global>{`
+            .markdown-preview {
+              color: hsl(var(--foreground));
+              font-size: 14px;
+              line-height: 1.7;
+            }
+            
+            .markdown-preview h1 {
+              font-size: 2em;
+              font-weight: 700;
+              margin-top: 0;
+              margin-bottom: 1rem;
+              padding-bottom: 0.3em;
+              border-bottom: 1px solid hsl(var(--border));
+            }
+            
+            .markdown-preview h2 {
+              font-size: 1.5em;
+              font-weight: 600;
+              margin-top: 1.5em;
+              margin-bottom: 0.75rem;
+              padding-bottom: 0.2em;
+              border-bottom: 1px solid hsl(var(--border));
+            }
+            
+            .markdown-preview h3 {
+              font-size: 1.25em;
+              font-weight: 600;
+              margin-top: 1.25em;
+              margin-bottom: 0.5rem;
+            }
+            
+            .markdown-preview h4, 
+            .markdown-preview h5, 
+            .markdown-preview h6 {
+              font-size: 1em;
+              font-weight: 600;
+              margin-top: 1em;
+              margin-bottom: 0.5rem;
+            }
+            
+            .markdown-preview p {
+              margin-top: 0;
+              margin-bottom: 1em;
+            }
+            
+            .markdown-preview ul, 
+            .markdown-preview ol {
+              margin-top: 0;
+              margin-bottom: 1em;
+              padding-left: 2em;
+            }
+            
+            .markdown-preview li {
+              margin-top: 0.25em;
+            }
+            
+            .markdown-preview table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 1em;
+              margin-bottom: 1em;
+              border: 1px solid hsl(var(--border));
+            }
+            
+            .markdown-preview thead {
+              background-color: hsl(var(--muted));
+            }
+            
+            .markdown-preview th {
+              padding: 0.75rem;
+              text-align: left;
+              font-weight: 600;
+              border: 1px solid hsl(var(--border));
+            }
+            
+            .markdown-preview td {
+              padding: 0.75rem;
+              border: 1px solid hsl(var(--border));
+            }
+            
+            .markdown-preview tbody tr:nth-child(even) {
+              background-color: hsl(var(--muted) / 0.3);
+            }
+            
+            .markdown-preview code {
+              background-color: hsl(var(--muted));
+              padding: 0.2em 0.4em;
+              border-radius: 3px;
+              font-size: 0.875em;
+              font-family: var(--font-mono);
+            }
+            
+            .markdown-preview pre {
+              background-color: hsl(var(--muted));
+              padding: 1em;
+              border-radius: 6px;
+              overflow-x: auto;
+              margin-top: 1em;
+              margin-bottom: 1em;
+            }
+            
+            .markdown-preview pre code {
+              background-color: transparent;
+              padding: 0;
+            }
+            
+            .markdown-preview blockquote {
+              border-left: 4px solid hsl(var(--primary));
+              padding-left: 1em;
+              margin-left: 0;
+              margin-right: 0;
+              color: hsl(var(--muted-foreground));
+              font-style: italic;
+            }
+            
+            .markdown-preview a {
+              color: hsl(var(--primary));
+              text-decoration: underline;
+            }
+            
+            .markdown-preview a:hover {
+              opacity: 0.8;
+            }
+            
+            .markdown-preview hr {
+              border: none;
+              border-top: 1px solid hsl(var(--border));
+              margin: 2em 0;
+            }
+            
+            .markdown-preview img {
+              max-width: 100%;
+              height: auto;
+            }
+          `}</style>
+
+          <TabsContent value="raw" className="mt-4">
+            <Textarea
+              value={result.markdown}
+              readOnly
+              className="font-mono text-xs min-h-[300px] max-h-[500px] resize-none"
+            />
+          </TabsContent>
+        </Tabs>
       </Card>
     </div>
   );

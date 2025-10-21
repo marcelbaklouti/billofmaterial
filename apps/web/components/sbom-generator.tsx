@@ -8,7 +8,9 @@ import { Card } from '@workspace/ui/components/card';
 import { Alert, AlertDescription } from '@workspace/ui/components/alert';
 import { Progress } from '@workspace/ui/components/progress';
 import { Button } from '@workspace/ui/components/button';
-import { Loader2, Shield, Package, Zap, Scale, ChevronRight, Sparkles } from 'lucide-react';
+import { Badge } from '@workspace/ui/components/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@workspace/ui/components/dialog';
+import { Loader2, Shield, Package, Zap, Scale, Sparkles, Clock } from 'lucide-react';
 
 interface UploadedFile {
   path: string;
@@ -127,7 +129,7 @@ export function SBOMGenerator() {
           <span>Free • No Login Required</span>
         </div>
 
-        <h1 className="text-5xl md:text-6xl font-bold tracking-tight bg-gradient-to-br from-foreground to-muted-foreground bg-clip-text text-transparent">
+        <h1 className="text-5xl md:text-6xl font-bold tracking-tight bg-linear-to-br from-foreground to-muted-foreground bg-clip-text text-transparent">
           Bill of Material Generator
         </h1>
 
@@ -159,18 +161,20 @@ export function SBOMGenerator() {
 
       {/* Main Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 mb-6">
-          <TabsTrigger value="upload" className="gap-2">
-            <Package className="w-4 h-4" />
-            Upload & Generate
-          </TabsTrigger>
-          <TabsTrigger value="result" disabled={!result && !isGenerating} className="gap-2">
-            <Sparkles className="w-4 h-4" />
-            {result ? 'View Results' : 'Result'}
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex justify-center">
+          <TabsList>
+            <TabsTrigger value="upload" className="gap-2 cursor-pointer">
+              <Package className="w-4 h-4" />
+              Upload & Generate
+            </TabsTrigger>
+            <TabsTrigger value="result" disabled={!result && !isGenerating} className="gap-2 cursor-pointer">
+              <Sparkles className="w-4 h-4" />
+              {result ? 'View Results' : 'Result'}
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
-        <TabsContent value="upload" className="space-y-6">
+        <TabsContent value="upload" className="space-y-6 mt-6">
           <FileUpload onFilesUploaded={handleGenerate} disabled={isGenerating} />
 
           {isGenerating && progress && (
@@ -255,7 +259,7 @@ export function SBOMGenerator() {
           </div>
         </TabsContent>
 
-        <TabsContent value="result" className="space-y-6">
+        <TabsContent value="result" className="space-y-6 mt-6">
           {result && (
             <>
               <div className="flex items-center justify-between">
@@ -279,11 +283,18 @@ export function SBOMGenerator() {
       {/* Footer */}
       <div className="text-center text-sm text-muted-foreground space-y-2 py-8 border-t">
         <p>
-          Supports single packages and monorepos • No data stored • 100% private
+          Single package support • No data stored • 100% private
         </p>
-        <p className="text-xs">
-          Also available as CLI: <code className="px-2 py-1 bg-muted rounded">npx billofmaterial@latest generate</code>
-        </p>
+        <div className="flex items-center justify-center gap-2 text-xs">
+          <span>CLI Tool:</span>
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-muted/50 rounded-md">
+            <code className="text-xs">npx billofmaterial@latest generate</code>
+            <Badge variant="outline" className="text-xs gap-1">
+              <Clock className="w-3 h-3" />
+              Coming Soon
+            </Badge>
+          </div>
+        </div>
         <p className="text-xs mt-4 flex items-center justify-center gap-1">
           Made with <span className="text-red-500 animate-pulse">❤️</span> by{' '}
           <a
@@ -296,6 +307,56 @@ export function SBOMGenerator() {
           </a>
         </p>
       </div>
+
+      {/* Progress Modal */}
+      <Dialog open={isGenerating} onOpenChange={() => { }}>
+        <DialogContent className="sm:max-w-md" onInteractOutside={(e: Event) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              Generating SBOM
+            </DialogTitle>
+            <DialogDescription>
+              Please wait while we analyze your dependencies...
+            </DialogDescription>
+          </DialogHeader>
+
+          {progress && (
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">{progress.message}</span>
+                  {progress.current !== undefined && progress.total !== undefined && (
+                    <span className="text-muted-foreground">
+                      {progress.current} / {progress.total}
+                    </span>
+                  )}
+                </div>
+
+                {progress.current !== undefined && progress.total !== undefined && (
+                  <div className="space-y-2">
+                    <Progress
+                      value={(progress.current / progress.total) * 100}
+                      className="h-2"
+                    />
+                    <p className="text-xs text-center text-muted-foreground">
+                      {Math.round((progress.current / progress.total) * 100)}% complete
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-start gap-2 p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground">
+                <Shield className="w-4 h-4 shrink-0 mt-0.5" />
+                <p>
+                  We're fetching security data from Snyk and bundle sizes from Bundlephobia.
+                  This may take a few moments depending on the number of dependencies.
+                </p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

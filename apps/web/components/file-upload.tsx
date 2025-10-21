@@ -125,7 +125,7 @@ export function FileUpload({ onFilesUploaded, disabled = false }: FileUploadProp
     <Card className="p-6">
       <div className="space-y-4">
         <div
-          className={`relative border-2 border-dashed rounded-lg p-12 text-center transition-colors ${disabled
+          className={`relative border-2 border-dashed rounded-lg p-8 md:p-12 text-center transition-colors ${disabled
             ? 'border-muted-foreground/10 bg-muted/20 opacity-60 cursor-not-allowed'
             : dragActive
               ? 'border-primary bg-primary/5'
@@ -145,9 +145,9 @@ export function FileUpload({ onFilesUploaded, disabled = false }: FileUploadProp
           </p>
 
           <div className="flex gap-3 justify-center">
-            <label htmlFor="file-upload">
+            <label htmlFor="file-upload" className="cursor-pointer">
               <Button variant="outline" size="sm" asChild disabled={disabled}>
-                <span>
+                <span className="cursor-pointer">
                   <FileJson className="w-4 h-4" />
                   Upload File
                 </span>
@@ -163,9 +163,9 @@ export function FileUpload({ onFilesUploaded, disabled = false }: FileUploadProp
               />
             </label>
 
-            <label htmlFor="folder-upload">
+            <label htmlFor="folder-upload" className="cursor-pointer">
               <Button variant="outline" size="sm" asChild disabled={disabled}>
-                <span>
+                <span className="cursor-pointer">
                   <FolderOpen className="w-4 h-4" />
                   Upload Folder
                 </span>
@@ -193,7 +193,7 @@ export function FileUpload({ onFilesUploaded, disabled = false }: FileUploadProp
               </Button>
             </div>
 
-            <div className="space-y-2 max-h-40 overflow-y-auto">
+            <div className="space-y-2 max-h-48 overflow-y-auto">
               {files.map((file) => (
                 <div
                   key={file.path}
