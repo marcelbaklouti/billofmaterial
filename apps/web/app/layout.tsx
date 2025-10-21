@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 
 import "@workspace/ui/globals.css"
@@ -12,6 +13,12 @@ const fontMono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
 })
+
+export const metadata: Metadata = {
+  title: "Bill of Material - SBOM Generator",
+  description: "Generate comprehensive Software Bill of Materials (SBOM) for your projects with security analysis, risk assessment, and bundle size insights.",
+  keywords: ["SBOM", "Bill of Material", "Security", "Dependencies", "npm", "Monorepo"],
+}
 
 export default function RootLayout({
   children,

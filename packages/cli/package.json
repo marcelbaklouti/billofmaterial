@@ -1,0 +1,50 @@
+{
+  "name": "billofmaterial",
+  "version": "0.0.1",
+  "description": "Generate comprehensive Software Bill of Materials (SBOM) for your projects",
+  "type": "module",
+  "bin": {
+    "billofmaterial": "./dist/cli.js",
+    "bom": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "sbom",
+    "bill-of-material",
+    "security",
+    "dependencies",
+    "npm",
+    "monorepo",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@billofmaterial/sbom-core": "workspace:*",
+    "commander": "^13.0.0",
+    "ora": "^8.1.1",
+    "chalk": "^5.4.1",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@workspace/typescript-config": "workspace:*",
+    "@types/node": "^20.19.9",
+    "typescript": "^5.9.2"
+  }
+}
