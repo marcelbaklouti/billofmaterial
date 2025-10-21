@@ -71,14 +71,16 @@ pnpm dev
 
 When importing your project, use these settings:
 
-| Setting              | Value            |
-| -------------------- | ---------------- |
-| **Framework Preset** | Next.js          |
-| **Root Directory**   | `apps/web`       |
-| **Build Command**    | `pnpm run build` |
-| **Install Command**  | `pnpm install`   |
-| **Output Directory** | `.next`          |
-| **Node.js Version**  | 20.x             |
+| Setting              | Value                                                                                  |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| **Framework Preset** | Next.js                                                                                |
+| **Root Directory**   | `apps/web`                                                                             |
+| **Build Command**    | `cd ../../packages/sbom-core && pnpm run build && cd ../../apps/web && pnpm run build` |
+| **Install Command**  | `pnpm install`                                                                         |
+| **Output Directory** | `.next`                                                                                |
+| **Node.js Version**  | 20.x                                                                                   |
+
+> **Note**: The build command explicitly builds the `sbom-core` package first to ensure workspace dependencies are ready.
 
 ---
 

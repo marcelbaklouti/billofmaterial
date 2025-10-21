@@ -278,6 +278,17 @@ export function SBOMGenerator() {
         <p className="text-xs">
           Also available as CLI: <code className="px-2 py-1 bg-muted rounded">npx billofmaterial@latest generate</code>
         </p>
+        <p className="text-xs mt-4 flex items-center justify-center gap-1">
+          Made with <span className="text-red-500 animate-pulse">❤️</span> by{' '}
+          <a
+            href="https://github.com/marcelbaklouti"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium hover:text-foreground transition-colors underline underline-offset-2"
+          >
+            Marcel Baklouti
+          </a>
+        </p>
       </div>
     </div>
   );
