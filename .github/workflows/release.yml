@@ -1,0 +1,146 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/**"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 10.4.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Get CLI package version
+        id: get_version
+        run: |
+          VERSION=$(node -p "require('./packages/cli/package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "CLI Version: $VERSION"
+
+      - name: Check if version tag exists
+        id: check_tag
+        run: |
+          if git rev-parse "v${{ steps.get_version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Tag v${{ steps.get_version.outputs.version }} already exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Tag v${{ steps.get_version.outputs.version }} does not exist"
+          fi
+
+      - name: Prepare packages for npm
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          # Replace workspace:* dependencies with actual versions
+          cd packages/cli
+          CORE_VERSION=$(node -p "require('../sbom-core/package.json').version")
+          sed -i "s/\"@billofmaterial\/sbom-core\": \"workspace:\*\"/\"@billofmaterial\/sbom-core\": \"^$CORE_VERSION\"/" package.json
+          echo "Updated CLI package.json dependencies"
+          cat package.json | grep "@billofmaterial/sbom-core"
+
+      - name: Configure npm authentication
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+
+      - name: Publish @billofmaterial/sbom-core
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          cd packages/sbom-core
+          npm publish --access public
+          echo "✅ Published @billofmaterial/sbom-core"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Wait for npm propagation
+        if: steps.check_tag.outputs.exists == 'false'
+        run: sleep 30
+
+      - name: Publish billofmaterial CLI
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          cd packages/cli
+          npm publish --access public
+          echo "✅ Published billofmaterial CLI"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Generate Release Notes
+        if: steps.check_tag.outputs.exists == 'false'
+        id: release_notes
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            RELEASE_NOTES=$(git log --pretty=format:"- %s (%h)" | head -20)
+          else
+            RELEASE_NOTES=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)")
+          fi
+          echo "Release Notes:"
+          echo "$RELEASE_NOTES"
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          gh release create "v${{ steps.get_version.outputs.version }}" \
+            --title "Release v${{ steps.get_version.outputs.version }}" \
+            --notes "${{ steps.release_notes.outputs.notes }}" \
+            --latest
+          echo "✅ Created GitHub release v${{ steps.get_version.outputs.version }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Publish Summary
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          echo "## 🚀 Release v${{ steps.get_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Published Packages" >> $GITHUB_STEP_SUMMARY
+          echo "- [@billofmaterial/sbom-core](https://www.npmjs.com/package/@billofmaterial/sbom-core)" >> $GITHUB_STEP_SUMMARY
+          echo "- [billofmaterial](https://www.npmjs.com/package/billofmaterial)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🧪 Test the CLI" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "npx billofmaterial@latest generate" >> $GITHUB_STEP_SUMMARY
+          echo "# or" >> $GITHUB_STEP_SUMMARY
+          echo "pnpm dlx billofmaterial@latest generate" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Skip release (tag exists)
+        if: steps.check_tag.outputs.exists == 'true'
+        run: |
+          echo "⏭️ Skipping release - version v${{ steps.get_version.outputs.version }} already published"
+          echo "## ⏭️ Release Skipped" >> $GITHUB_STEP_SUMMARY
+          echo "Version v${{ steps.get_version.outputs.version }} already exists" >> $GITHUB_STEP_SUMMARY

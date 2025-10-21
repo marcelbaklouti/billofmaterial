@@ -317,6 +317,32 @@ MIT License - see [LICENSE](LICENSE) file for details
 - Package data from [npm Registry](https://registry.npmjs.org/)
 - UI components from [Shadcn UI](https://ui.shadcn.com/)
 
+## 🚀 Publishing to npm
+
+This project uses GitHub Actions to automatically publish to npm. See [PUBLISHING.md](./PUBLISHING.md) for the complete guide.
+
+### Quick Release
+
+```bash
+# Bump version and prepare for release
+./scripts/version.sh patch  # or minor/major
+
+# Push to trigger automatic publishing
+git push origin main
+```
+
+The GitHub Action will:
+
+- Build all packages with Turbo
+- Publish `@billofmaterial/sbom-core` to npm
+- Publish `billofmaterial` CLI to npm
+- Create a GitHub release
+
+### Prerequisites
+
+1. Add `NPM_TOKEN` to GitHub Secrets (see [PUBLISHING.md](./PUBLISHING.md))
+2. Ensure you have npm publish rights
+
 ## 📬 Support
 
 - 🐛 [Report Issues](https://github.com/yourusername/billofmaterial/issues)
