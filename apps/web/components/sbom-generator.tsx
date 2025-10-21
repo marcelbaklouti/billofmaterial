@@ -118,7 +118,7 @@ export function SBOMGenerator() {
       <div className="text-center space-y-4 py-8">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-4">
           <Sparkles className="w-4 h-4" />
-          <span>Free • Open Source • No Login Required</span>
+          <span>Free • No Login Required</span>
         </div>
 
         <h1 className="text-5xl md:text-6xl font-bold tracking-tight bg-gradient-to-br from-foreground to-muted-foreground bg-clip-text text-transparent">
