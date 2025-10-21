@@ -1,4 +1,4 @@
-import { JSDOM } from 'jsdom';
+import * as cheerio from 'cheerio';
 import {
   GeneratorOptions,
   SBOMResult,
@@ -110,8 +110,8 @@ async function getNpmSecurityScore(
   
   try {
     const html = await response.text();
-    const dom = new JSDOM(html);
-    const score = dom.window.document.querySelector('.number')?.querySelector('span')?.textContent || 'N/A';
+    const $ = cheerio.load(html);
+    const score = $('.number span').first().text().trim() || 'N/A';
     return score;
   } catch {
     return 'N/A';

@@ -55,7 +55,13 @@ export function SBOMGenerator() {
         });
 
         if (!response.ok) {
-          throw new Error('Failed to generate SBOM');
+          // Try to get the error message from the response
+          try {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to generate SBOM');
+          } catch (parseError) {
+            throw new Error(`Failed to generate SBOM (${response.status})`);
+          }
         }
 
         // Handle Server-Sent Events

@@ -37,10 +37,10 @@
   "license": "MIT",
   "dependencies": {
     "@billofmaterial/sbom-core": "workspace:*",
-    "commander": "^13.0.0",
-    "ora": "^8.1.1",
-    "chalk": "^5.4.1",
-    "yaml": "^2.6.1"
+    "commander": "^14.0.1",
+    "ora": "^9.0.0",
+    "chalk": "^5.6.2",
+    "yaml": "^2.8.1"
   },
   "devDependencies": {
     "@workspace/typescript-config": "workspace:*",

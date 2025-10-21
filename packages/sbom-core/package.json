@@ -20,12 +20,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "jsdom": "^25.0.1",
-    "yaml": "^2.6.1"
+    "cheerio": "^1.1.2",
+    "yaml": "^2.8.1"
   },
   "devDependencies": {
     "@workspace/typescript-config": "workspace:*",
-    "@types/jsdom": "^21.1.7",
     "@types/node": "^20.19.9",
     "typescript": "^5.9.2"
   }

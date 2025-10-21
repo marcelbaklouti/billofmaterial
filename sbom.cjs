@@ -154,7 +154,7 @@ class ProgressTracker {
 
     console.log(
       `${this.description}: [${this.current}/${this.total}] ${percentage}% | ` +
-        `Elapsed: ${elapsed}s | ETA: ${remaining}s`
+      `Elapsed: ${elapsed}s | ETA: ${remaining}s`
     );
   }
 }
@@ -687,7 +687,7 @@ const generateInsights = (data) => {
     devDependencies: data.devDependencies.length,
     averageSecurityScore: Math.round(
       allDeps.reduce((sum, d) => sum + (parseInt(d.securityScore) || 0), 0) /
-        allDeps.length
+      allDeps.length
     ),
     vulnerabilities: data.auditSummary,
   };
@@ -889,9 +889,9 @@ const generateMarkdownDoc = (data, insights) => {
       .map(([_, vulnerability], index, array) => {
         const CWEList = vulnerability.cwe
           ? vulnerability.cwe.map((cwe) => {
-              const cweID = cwe.split("-")[1];
-              return `[${cwe}](https://cwe.mitre.org/data/definitions/${cweID}.html)`;
-            })
+            const cweID = cwe.split("-")[1];
+            return `[${cwe}](https://cwe.mitre.org/data/definitions/${cweID}.html)`;
+          })
           : ["N/A"];
 
         return `#### [${vulnerability.module_name}](https://www.npmjs.com/package/${vulnerability.module_name})
