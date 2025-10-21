@@ -134,8 +134,8 @@ jobs:
           echo "## 🚀 Release v${{ steps.get_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Published Packages" >> $GITHUB_STEP_SUMMARY
-          echo "- [@billofmaterial/sbom-core](https://www.npmjs.com/package/@billofmaterial/sbom-core)" >> $GITHUB_STEP_SUMMARY
-          echo "- [billofmaterial](https://www.npmjs.com/package/billofmaterial)" >> $GITHUB_STEP_SUMMARY
+          echo "- [@billofmaterial/sbom-core](https://www.npmjs.com/package/@billofmaterial/sbom-core) - Core library (dependency)" >> $GITHUB_STEP_SUMMARY
+          echo "- [billofmaterial](https://www.npmjs.com/package/billofmaterial) - **CLI tool** (main package)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🧪 Test the CLI" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
@@ -143,6 +143,8 @@ jobs:
           echo "# or" >> $GITHUB_STEP_SUMMARY
           echo "pnpm dlx billofmaterial@latest generate" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Core is automatically installed as a dependency of the CLI" >> $GITHUB_STEP_SUMMARY
 
       - name: Skip release (tag exists)
         if: steps.check_tag.outputs.exists == 'true'
