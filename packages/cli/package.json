@@ -1,6 +1,6 @@
 {
   "name": "billofmaterial",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Generate comprehensive Software Bill of Materials (SBOM) for your projects",
   "type": "module",
   "bin": {
