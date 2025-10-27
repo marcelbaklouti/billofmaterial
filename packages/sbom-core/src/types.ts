@@ -69,6 +69,7 @@ export interface SBOMResult {
   dependencyTree?: DependencyTree;
   csv?: string;
   json?: string;
+  spdx?: SPDXDocument;
 }
 
 export interface AuditData {
@@ -160,5 +161,56 @@ export interface GeneratorOptions {
   packageJsonPath?: string;
   files?: Array<{ path: string; content: string }>;
   config?: SBOMConfig;
+}
+
+// SPDX 2.3 Types (ISO/IEC 5962:2021)
+export interface SPDXDocument {
+  spdxVersion: string;
+  dataLicense: string;
+  SPDXID: string;
+  name: string;
+  documentNamespace: string;
+  creationInfo: SPDXCreationInfo;
+  packages: SPDXPackage[];
+  relationships: SPDXRelationship[];
+}
+
+export interface SPDXCreationInfo {
+  created: string;
+  creators: string[];
+  licenseListVersion?: string;
+}
+
+export interface SPDXPackage {
+  SPDXID: string;
+  name: string;
+  versionInfo: string;
+  downloadLocation: string;
+  filesAnalyzed: boolean;
+  supplier?: string;
+  homepage?: string;
+  licenseConcluded: string;
+  licenseDeclared: string;
+  copyrightText: string;
+  description?: string;
+  externalRefs?: SPDXExternalRef[];
+  checksums?: SPDXChecksum[];
+}
+
+export interface SPDXExternalRef {
+  referenceCategory: string;
+  referenceType: string;
+  referenceLocator: string;
+}
+
+export interface SPDXChecksum {
+  algorithm: string;
+  checksumValue: string;
+}
+
+export interface SPDXRelationship {
+  spdxElementId: string;
+  relationshipType: string;
+  relatedSpdxElement: string;
 }
 

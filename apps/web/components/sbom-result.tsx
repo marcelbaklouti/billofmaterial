@@ -9,7 +9,7 @@ import { Button } from '@workspace/ui/components/button';
 import { Textarea } from '@workspace/ui/components/textarea';
 import { Badge } from '@workspace/ui/components/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@workspace/ui/components/tabs';
-import { Download, Copy, CheckCheck, Package, AlertTriangle, Scale, Archive, Eye, Code2, Ghost } from 'lucide-react';
+import { Download, Copy, CheckCheck, Package, AlertTriangle, Scale, Archive, Eye, Code2, Ghost, FileJson } from 'lucide-react';
 
 interface SBOMResultProps {
   result: any;
@@ -48,6 +48,29 @@ export function SBOMResult({ result }: SBOMResultProps) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, [result.markdown]);
+
+  const handleDownloadSPDX = useCallback(() => {
+    if (result.spdx) {
+      const spdxJson = JSON.stringify(result.spdx, null, 2);
+      const blob = new Blob([spdxJson], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'sbom-spdx.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  }, [result.spdx]);
+
+  const handleCopySPDX = useCallback(() => {
+    if (result.spdx) {
+      navigator.clipboard.writeText(JSON.stringify(result.spdx, null, 2));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, [result.spdx]);
 
   const insights = result.insights;
 
@@ -328,6 +351,10 @@ export function SBOMResult({ result }: SBOMResultProps) {
                 <Code2 className="w-4 h-4" />
                 Raw Markdown
               </TabsTrigger>
+              <TabsTrigger value="spdx" className="gap-2 cursor-pointer">
+                <FileJson className="w-4 h-4" />
+                SPDX (ISO/IEC 5962:2021)
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -489,6 +516,58 @@ export function SBOMResult({ result }: SBOMResultProps) {
               readOnly
               className="font-mono text-xs min-h-[300px] max-h-[500px] resize-none"
             />
+          </TabsContent>
+
+          <TabsContent value="spdx" className="mt-4">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 bg-blue-500/5 border border-blue-500/20 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-500/10 rounded">
+                    <FileJson className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-sm">ISO/IEC 5962:2021 Compliant</h4>
+                    <p className="text-xs text-muted-foreground">
+                      SPDX 2.3 format - Industry standard for Software Bill of Materials
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCopySPDX}
+                    disabled={copied || !result.spdx}
+                  >
+                    {copied ? (
+                      <>
+                        <CheckCheck className="w-4 h-4" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4" />
+                        Copy
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleDownloadSPDX}
+                    disabled={!result.spdx}
+                  >
+                    <Download className="w-4 h-4" />
+                    Download SPDX
+                  </Button>
+                </div>
+              </div>
+              <Textarea
+                value={result.spdx ? JSON.stringify(result.spdx, null, 2) : 'SPDX data not available'}
+                readOnly
+                className="font-mono text-xs min-h-[300px] max-h-[500px] resize-none"
+              />
+            </div>
           </TabsContent>
         </Tabs>
       </Card>

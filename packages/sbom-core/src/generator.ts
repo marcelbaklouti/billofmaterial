@@ -7,7 +7,10 @@ import {
   PackageData,
   SBOMConfig,
   RiskAssessment,
-  SBOMInsights
+  SBOMInsights,
+  SPDXDocument,
+  SPDXPackage,
+  SPDXRelationship
 } from './types';
 import { detectMonorepo, findAllPackageJsons } from './monorepo';
 
@@ -618,6 +621,107 @@ function generateMarkdown(result: SBOMResult): string {
   return markdown;
 }
 
+function generateSPDX(result: SBOMResult, rootPackageJson: PackageJson): SPDXDocument {
+  const timestamp = new Date().toISOString();
+  const projectName = rootPackageJson.name || 'project';
+  const projectVersion = rootPackageJson.version || '1.0.0';
+  
+  // Helper to create SPDX ID from package name
+  const toSPDXID = (name: string) => {
+    return `SPDXRef-Package-${name.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
+  };
+
+  const spdxPackages: SPDXPackage[] = [];
+  const relationships: SPDXRelationship[] = [];
+
+  // Root package
+  const rootSPDXID = 'SPDXRef-Package-Root';
+  spdxPackages.push({
+    SPDXID: rootSPDXID,
+    name: projectName,
+    versionInfo: projectVersion,
+    downloadLocation: rootPackageJson.homepage || rootPackageJson.repository?.url || 'NOASSERTION',
+    filesAnalyzed: false,
+    supplier: 'NOASSERTION',
+    homepage: rootPackageJson.homepage || 'NOASSERTION',
+    licenseConcluded: rootPackageJson.license || 'NOASSERTION',
+    licenseDeclared: rootPackageJson.license || 'NOASSERTION',
+    copyrightText: 'NOASSERTION',
+    description: rootPackageJson.description || '',
+  });
+
+  // Add all dependencies as SPDX packages
+  for (const pkg of result.packages) {
+    const allDeps = [...pkg.dependencies, ...pkg.devDependencies];
+    
+    for (const dep of allDeps) {
+      const spdxId = toSPDXID(dep.name);
+      
+      // Avoid duplicates
+      if (spdxPackages.some(p => p.SPDXID === spdxId)) {
+        continue;
+      }
+
+      const downloadUrl = `https://registry.npmjs.org/${dep.name}/-/${dep.name}-${dep.version}.tgz`;
+      
+      spdxPackages.push({
+        SPDXID: spdxId,
+        name: dep.name,
+        versionInfo: dep.version,
+        downloadLocation: downloadUrl,
+        filesAnalyzed: false,
+        supplier: 'NOASSERTION',
+        homepage: dep.homepage || 'NOASSERTION',
+        licenseConcluded: dep.license || 'NOASSERTION',
+        licenseDeclared: dep.license || 'NOASSERTION',
+        copyrightText: 'NOASSERTION',
+        description: dep.description || '',
+        externalRefs: [
+          {
+            referenceCategory: 'PACKAGE-MANAGER',
+            referenceType: 'purl',
+            referenceLocator: `pkg:npm/${dep.name}@${dep.version}`,
+          },
+        ],
+      });
+
+      // Create relationship: root DEPENDS_ON dependency
+      relationships.push({
+        spdxElementId: rootSPDXID,
+        relationshipType: 'DEPENDS_ON',
+        relatedSpdxElement: spdxId,
+      });
+    }
+  }
+
+  const spdxDoc: SPDXDocument = {
+    spdxVersion: 'SPDX-2.3',
+    dataLicense: 'CC0-1.0',
+    SPDXID: 'SPDXRef-DOCUMENT',
+    name: `${projectName}-${projectVersion}`,
+    documentNamespace: `https://sbom.billofmaterial.dev/${projectName}/${projectVersion}/${timestamp}`,
+    creationInfo: {
+      created: timestamp,
+      creators: [
+        'Tool: billofmaterial',
+        'Organization: Bill of Material (https://billofmaterial.dev)',
+      ],
+      licenseListVersion: '3.21',
+    },
+    packages: spdxPackages,
+    relationships: [
+      {
+        spdxElementId: 'SPDXRef-DOCUMENT',
+        relationshipType: 'DESCRIBES',
+        relatedSpdxElement: rootSPDXID,
+      },
+      ...relationships,
+    ],
+  };
+
+  return spdxDoc;
+}
+
 export async function generateSBOM(
   options: GeneratorOptions,
   onProgress?: (message: string, current?: number, total?: number) => void
@@ -766,6 +870,10 @@ export async function generateSBOM(
   };
 
   result.markdown = generateMarkdown(result);
+  
+  // Generate SPDX format (ISO/IEC 5962:2021)
+  onProgress?.('Generating SPDX format...');
+  result.spdx = generateSPDX(result, rootPackageJson);
 
   const duration = Math.round((Date.now() - startTime) / 1000);
   onProgress?.(`✅ Completed in ${duration}s`);
