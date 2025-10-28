@@ -10,6 +10,7 @@ import { Textarea } from '@workspace/ui/components/textarea';
 import { Badge } from '@workspace/ui/components/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@workspace/ui/components/tabs';
 import { Download, Copy, CheckCheck, Package, AlertTriangle, Scale, Archive, Eye, Code2, Ghost, FileJson } from 'lucide-react';
+import { sanitizeMarkdown, validateMarkdown } from '../lib/markdown-sanitizer';
 
 interface SBOMResultProps {
   result: any;
@@ -22,12 +23,28 @@ export function SBOMResult({ result }: SBOMResultProps) {
   // Serialize markdown to MDX on component mount
   useEffect(() => {
     if (result.markdown) {
-      serialize(result.markdown, {
+      // Validate and sanitize the markdown content
+      const validation = validateMarkdown(result.markdown);
+      const cleanMarkdown = sanitizeMarkdown(result.markdown);
+
+      console.log('Markdown validation:', validation);
+
+      serialize(cleanMarkdown, {
         mdxOptions: {
           development: false,
           remarkPlugins: [remarkGfm],
         }
-      }).then(setMdxSource);
+      })
+        .then(setMdxSource)
+        .catch((error) => {
+          console.error('Failed to serialize markdown to MDX:', error);
+          console.error('Validation errors:', validation.errors);
+          // Set a fallback MDX source with error message
+          setMdxSource({
+            compiledSource: `export default function MDXContent() { return <div className="p-4 bg-red-50 border border-red-200 rounded-lg"><p className="text-red-800">Error rendering markdown: ${error.message}</p><details className="mt-2"><summary className="cursor-pointer text-sm">Show validation errors</summary><ul className="mt-2 text-sm">${validation.errors.map(err => '<li>' + err + '</li>').join('')}</ul></details><details className="mt-2"><summary className="cursor-pointer text-sm">Show raw markdown</summary><pre className="mt-2 p-2 bg-gray-100 text-xs overflow-auto max-h-40">${result.markdown.substring(0, 1000)}${result.markdown.length > 1000 ? '...' : ''}</pre></details></div>; }`,
+            scope: {},
+          });
+        });
     }
   }, [result.markdown]);
 

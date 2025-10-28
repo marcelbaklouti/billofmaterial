@@ -49,10 +49,24 @@ export function FileUpload({ onFilesUploaded, disabled = false }: FileUploadProp
       const path = (file as any).webkitRelativePath || file.name;
 
       if (path === 'package.json' || path.endsWith('/package.json')) {
-        if (path === 'package.json') {
-          rootPackageJson = content;
+        try {
+          // Validate package.json content
+          const parsed = JSON.parse(content);
+          if (typeof parsed === 'object' && parsed !== null) {
+            if (path === 'package.json') {
+              rootPackageJson = content;
+            }
+            uploadedFiles.push({ path, content });
+          } else {
+            console.warn(`Invalid package.json at ${path}: Not a valid JSON object`);
+          }
+        } catch (error) {
+          console.warn(`Invalid package.json at ${path}:`, error);
+          if (path === 'package.json') {
+            alert(`Invalid package.json file: ${error instanceof Error ? error.message : 'Invalid JSON format'}`);
+            return;
+          }
         }
-        uploadedFiles.push({ path, content });
       } else if (
         path === 'pnpm-workspace.yaml' ||
         path === 'pnpm-workspace.yml' ||
@@ -131,18 +145,35 @@ export function FileUpload({ onFilesUploaded, disabled = false }: FileUploadProp
     setPasteError('');
 
     try {
+      // Trim and validate input
+      const trimmedContent = pastedContent.trim();
+      if (!trimmedContent) {
+        setPasteError('Please paste package.json content.');
+        return;
+      }
+
       // Validate JSON
-      const parsed = JSON.parse(pastedContent);
+      const parsed = JSON.parse(trimmedContent);
 
       if (!parsed.dependencies && !parsed.devDependencies) {
         setPasteError('Invalid package.json: No dependencies found');
         return;
       }
 
+      // Additional validation for common issues
+      if (typeof parsed !== 'object' || parsed === null) {
+        setPasteError('Invalid package.json: Must be a valid JSON object');
+        return;
+      }
+
       // Generate with pasted content
-      onFilesUploaded(pastedContent, []);
+      onFilesUploaded(trimmedContent, []);
     } catch (error) {
-      setPasteError('Invalid JSON format. Please paste a valid package.json content.');
+      if (error instanceof SyntaxError) {
+        setPasteError('Invalid JSON format. Please check for syntax errors like missing quotes, commas, or brackets.');
+      } else {
+        setPasteError('Invalid package.json content. Please paste a valid package.json file.');
+      }
     }
   }, [pastedContent, onFilesUploaded]);
 
@@ -292,15 +323,15 @@ export function FileUpload({ onFilesUploaded, disabled = false }: FileUploadProp
               </div>
               <Textarea
                 placeholder='Paste your package.json content here... 
-Example:
-{
-  "name": "my-project",
-  "version": "1.0.0",
-  "dependencies": {
-    "react": "^18.0.0",
-    "next": "^14.0.0"
-  }
-}'
+                  Example:
+                  {
+                    "name": "my-project",
+                    "version": "1.0.0",
+                    "dependencies": {
+                      "react": "^18.0.0",
+                      "next": "^14.0.0"
+                    }
+                  }'
                 value={pastedContent}
                 onChange={(e) => {
                   setPastedContent(e.target.value);
@@ -328,7 +359,7 @@ Example:
               <ul className="text-xs text-muted-foreground space-y-1">
                 <li>• Works with any Node.js project</li>
                 <li>• Supports monorepo package.json files</li>
-                <li>• No data leaves your browser until you click Generate</li>
+                <li>• No data leaves your browser</li>
               </ul>
             </div>
 

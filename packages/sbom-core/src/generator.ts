@@ -451,9 +451,21 @@ function generateInsights(
 function generateMarkdown(result: SBOMResult): string {
   const { packages, isMonorepo, insights } = result;
   
+  // Escape HTML entities to prevent MDX parsing issues
+  const escapeHtml = (text: string): string => {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+      .replace(/\//g, '&#x2F;') // Escape forward slashes that can cause issues
+      .replace(/\\/g, '&#x5C;'); // Escape backslashes
+  };
+  
   const riskBadge = (riskLevel: string) => {
     const colors = { Low: 'green', Medium: 'yellow', High: 'red' };
-    return `![Risk: ${riskLevel}](https://img.shields.io/badge/Risk-${riskLevel}-${colors[riskLevel as keyof typeof colors]})`;
+    return `![Risk: ${escapeHtml(riskLevel)}](https://img.shields.io/badge/Risk-${escapeHtml(riskLevel)}-${colors[riskLevel as keyof typeof colors]})`;
   };
 
   const formatDependencyTable = (deps: DependencyInfo[]) => {
@@ -464,7 +476,7 @@ function generateMarkdown(result: SBOMResult): string {
         const riskBadgeStr = d.risk ? riskBadge(d.risk.riskLevel) : '';
         const licenseBadge = d.licenseProblematic ? `⚠️ ${d.license}` : d.license;
 
-        return `| [${d.name}](https://www.npmjs.com/package/${d.name}) | ${d.version} | ${d.description} | ${licenseBadge} | [${d.securityScore}](https://snyk.io/advisor/npm-package/${d.name}) | ${riskBadgeStr} | [${d.minifiedSize} KB](https://bundlephobia.com/package/${d.name}@${d.version}) | ${d.lastPublishDate} |`;
+        return `| [${escapeHtml(d.name)}](https://www.npmjs.com/package/${d.name}) | ${escapeHtml(d.version)} | ${escapeHtml(d.description)} | ${escapeHtml(licenseBadge)} | [${d.securityScore}](https://snyk.io/advisor/npm-package/${d.name}) | ${riskBadgeStr} | [${d.minifiedSize} KB](https://bundlephobia.com/package/${d.name}@${d.version}) | ${escapeHtml(d.lastPublishDate)} |`;
       })
       .join('\n');
   };
@@ -479,7 +491,7 @@ function generateMarkdown(result: SBOMResult): string {
       insightsText += `| Package | Risk Score | Factors |\n`;
       insightsText += `| ------- | --------- | ------- |\n`;
       insights.topRisks.forEach((risk: { name: string; score: number; factors: string[] }) => {
-        insightsText += `| ${risk.name} | ${risk.score}/100 | ${risk.factors.map((f: string) => `${f}`).join('<br>')} |\n`;
+        insightsText += `| ${escapeHtml(risk.name)} | ${risk.score}/100 | ${risk.factors.map((f: string) => escapeHtml(f)).join(' • ')} |\n`;
       });
       insightsText += `\n`;
     }
@@ -489,7 +501,7 @@ function generateMarkdown(result: SBOMResult): string {
       insightsText += `| Package | Size | Gzipped |\n`;
       insightsText += `| ------- | ---- | ------- |\n`;
       insights.heaviestDependencies.forEach((dep: { name: string; size: number; gzipSize: number }) => {
-        insightsText += `| ${dep.name} | ${dep.size} KB | ${dep.gzipSize} KB |\n`;
+        insightsText += `| ${escapeHtml(dep.name)} | ${dep.size} KB | ${dep.gzipSize} KB |\n`;
       });
       insightsText += `\n**Total Bundle Size:** ${Math.round(insights.totalBundleSize / 1024)} MB\n\n`;
     }
@@ -500,7 +512,7 @@ function generateMarkdown(result: SBOMResult): string {
       insightsText += `| Package | Current | Latest | Security Score |\n`;
       insightsText += `| ------- | ------- | ------ | -------------- |\n`;
       insights.quickWins.forEach((win: { name: string; current: string; latest: string; securityScore: string | number }) => {
-        insightsText += `| ${win.name} | ${win.current} | ${win.latest} | ${win.securityScore} |\n`;
+        insightsText += `| ${escapeHtml(win.name)} | ${escapeHtml(win.current)} | ${escapeHtml(win.latest)} | ${win.securityScore} |\n`;
       });
       insightsText += '\n';
     }
@@ -509,7 +521,7 @@ function generateMarkdown(result: SBOMResult): string {
       insightsText += `### ⚖️ License Concerns\n\n`;
       insightsText += `The following packages use licenses that may require special attention:\n\n`;
       insights.licenseIssues.forEach((issue: { name: string; license: string }) => {
-        insightsText += `- **${issue.name}**: ${issue.license}\n`;
+        insightsText += `- **${escapeHtml(issue.name)}**: ${escapeHtml(issue.license)}\n`;
       });
       insightsText += '\n';
     }
@@ -518,7 +530,7 @@ function generateMarkdown(result: SBOMResult): string {
       insightsText += `### 🏚️ Potentially Abandoned Packages\n\n`;
       insightsText += `These packages haven't been updated in over 2 years:\n\n`;
       insights.abandonedPackages.forEach((pkg: { name: string; lastUpdate: string; daysSince: number }) => {
-        insightsText += `- **${pkg.name}**: Last updated ${pkg.lastUpdate} (${pkg.daysSince} days ago)\n`;
+        insightsText += `- **${escapeHtml(pkg.name)}**: Last updated ${escapeHtml(pkg.lastUpdate)} (${pkg.daysSince} days ago)\n`;
       });
       insightsText += '\n';
     }
@@ -589,15 +601,15 @@ function generateMarkdown(result: SBOMResult): string {
     markdown += `| Package | Current | Wanted | Latest |\n`;
     markdown += `| ------- | ------- | ------ | ------ |\n`;
     Object.entries(result.outdatedPackages).slice(0, 20).forEach(([name, info]: [string, any]) => {
-      markdown += `| ${name} | ${info.current} | ${info.wanted} | ${info.latest} |\n`;
+      markdown += `| ${escapeHtml(name)} | ${escapeHtml(info.current)} | ${escapeHtml(info.wanted)} | ${escapeHtml(info.latest)} |\n`;
     });
     markdown += `\n`;
   }
 
   for (const pkg of packages) {
     if (isMonorepo) {
-      markdown += `\n---\n\n## Package: ${pkg.packageName || 'Root'}\n\n`;
-      markdown += `**Path:** \`${pkg.packagePath || '/'}\`\n\n`;
+      markdown += `\n---\n\n## Package: ${escapeHtml(pkg.packageName || 'Root')}\n\n`;
+      markdown += `**Path:** \`${escapeHtml(pkg.packagePath || '/')}\`\n\n`;
     }
 
     markdown += `### Production Dependencies\n\n`;
