@@ -12,7 +12,7 @@ const program = new Command();
 program
   .name('billofmaterial')
   .description('Generate comprehensive Software Bill of Materials (SBOM) for your projects')
-  .version('0.0.5');
+  .version('0.2.0');
 
 program
   .command('generate')

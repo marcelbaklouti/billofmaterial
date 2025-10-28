@@ -1,11 +1,12 @@
 {
   "name": "@billofmaterial/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Generate comprehensive Software Bill of Materials (SBOM) for your projects",
   "type": "module",
   "bin": {
     "billofmaterial": "dist/cli.js",
-    "bom": "dist/cli.js"
+    "bom": "dist/cli.js",
+    "@billofmaterial/cli": "dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
