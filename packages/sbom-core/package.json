@@ -28,6 +28,21 @@
     "@types/node": "^20.19.9",
     "typescript": "^5.9.2"
   },
+  "author": "Marcel Baklouti <marcel@baklouti.de>",
+  "license": "MIT",
+  "homepage": "https://billofmaterial.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/marcelbaklouti/billofmaterial.git"
+  },
+  "keywords": [
+    "sbom",
+    "bill-of-material",
+    "security",
+    "dependencies",
+    "npm",
+    "monorepo"
+  ],
   "publishConfig": {
     "access": "public"
   }
