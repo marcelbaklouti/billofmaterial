@@ -36,28 +36,25 @@ Visit **[billofmaterial.vercel.app](https://billofmaterial.vercel.app)** _(repla
 ### Option 2: CLI (No Installation Required)
 
 ```bash
-# Using pnpm (recommended)
-pnpm dlx @billofmaterial generate
-
-# Alternative: Using the CLI package directly
+# Using the CLI package directly (recommended)
 pnpm dlx @billofmaterial/cli generate
 
 # Using npx
-npx billofmaterial@latest generate
+npx billofmaterial/cli generate
 
 # Using yarn
-yarn dlx billofmaterial@latest generate
+yarn dlx billofmaterial/cli generate
 ```
 
 ### Option 3: Install Globally
 
 ```bash
-npm install -g billofmaterial
+npm install -g billofmaterial/cli
 # or
-pnpm add -g billofmaterial
+pnpm add -g billofmaterial/cli
 
 # Then run
-billofmaterial generate
+billofmaterial/cli generate
 ```
 
 ## 💻 CLI Usage
@@ -66,28 +63,28 @@ billofmaterial generate
 
 ```bash
 # Generate SBOM for current directory (using pnpm dlx - recommended)
-pnpm dlx @billofmaterial generate
+pnpm dlx @billofmaterial/cli generate
 
 # Generate SBOM for specific project
-pnpm dlx @billofmaterial generate -p ./my-project
+pnpm dlx @billofmaterial/cli generate -p ./my-project
 
 # Generate SBOM with custom output
-pnpm dlx @billofmaterial generate -o ./docs/DEPENDENCIES.md
+pnpm dlx @billofmaterial/cli generate -o ./docs/DEPENDENCIES.md
 
 # Generate both markdown and JSON
-pnpm dlx @billofmaterial generate --json
+pnpm dlx @billofmaterial/cli generate --json
 
 # Skip dev dependencies
-pnpm dlx @billofmaterial generate --no-dev
+pnpm dlx @billofmaterial/cli generate --no-dev
 
 # Skip bundle size analysis (faster)
-pnpm dlx @billofmaterial generate --no-bundle-size
+pnpm dlx @billofmaterial/cli generate --no-bundle-size
 
 # Alternative: Using the CLI package directly
 pnpm dlx @billofmaterial/cli generate
 
 # Or if installed globally
-billofmaterial generate
+billofmaterial/cli  generate
 ```
 
 ### CLI Options

@@ -17,25 +17,22 @@ Generate comprehensive Software Bill of Materials (SBOM) for your projects with 
 You don't need to install it! Use `pnpm dlx` (recommended) or `npx`:
 
 ```bash
-# Using pnpm (recommended)
-pnpm dlx @billofmaterial generate
-
-# Alternative: Using the CLI package directly
+# Using the CLI package directly (recommended)
 pnpm dlx @billofmaterial/cli generate
 
 # Using npx
-npx billofmaterial@latest generate
+npx billofmaterial/cli generate
 
 # Using yarn
-yarn dlx billofmaterial@latest generate
+yarn dlx billofmaterial/cli generate
 ```
 
 Or install globally:
 
 ```bash
-npm install -g billofmaterial
+npm install -g billofmaterial/cli
 # or
-pnpm add -g billofmaterial
+pnpm add -g billofmaterial/cli
 ```
 
 ## Usage
@@ -45,13 +42,13 @@ pnpm add -g billofmaterial
 Generate an SBOM for your current project:
 
 ```bash
-billofmaterial generate
+billofmaterial/cli generate
 ```
 
 ### Options
 
 ```bash
-billofmaterial generate [options]
+billofmaterial/cli generate [options]
 
 Options:
   -p, --path <path>      Path to project directory (default: current directory)
@@ -66,22 +63,22 @@ Options:
 
 ```bash
 # Generate SBOM for current directory
-billofmaterial generate
+billofmaterial/cli generate
 
 # Generate SBOM for specific project
-billofmaterial generate -p ./my-project
+billofmaterial/cli generate -p ./my-project
 
 # Generate SBOM with custom output
-billofmaterial generate -o ./docs/DEPENDENCIES.md
+billofmaterial/cli generate -o ./docs/DEPENDENCIES.md
 
 # Generate both markdown and JSON
-billofmaterial generate --json
+billofmaterial/cli generate --json
 
 # Skip dev dependencies
-billofmaterial generate --no-dev
+billofmaterial/cli generate --no-dev
 
 # Skip bundle size analysis (faster)
-billofmaterial generate --no-bundle-size
+billofmaterial/cli generate --no-bundle-size
 ```
 
 ## Web Interface
