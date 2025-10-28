@@ -2,6 +2,9 @@
   "name": "billofmaterial",
   "version": "0.0.1",
   "private": true,
+  "bin": {
+    "@billofmaterial": "./packages/cli/dist/cli.js"
+  },
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",

@@ -10,11 +10,7 @@ export function FooterSection() {
       <div className="flex items-center justify-center gap-2 text-xs">
         <span>CLI Tool:</span>
         <div className="inline-flex items-center gap-2 px-3 py-1 bg-muted/50 rounded-md">
-          <code className="text-xs">npx billofmaterial@latest generate</code>
-          <Badge variant="outline" className="text-xs gap-1">
-            <Clock className="w-3 h-3" />
-            Coming Soon
-          </Badge>
+          <code className="text-xs">pnpm dlx @billofmaterial generate</code>
         </div>
       </div>
       <p className="text-xs mt-4 flex items-center justify-center gap-1">

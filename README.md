@@ -36,11 +36,14 @@ Visit **[billofmaterial.vercel.app](https://billofmaterial.vercel.app)** _(repla
 ### Option 2: CLI (No Installation Required)
 
 ```bash
+# Using pnpm (recommended)
+pnpm dlx @billofmaterial generate
+
+# Alternative: Using the CLI package directly
+pnpm dlx @billofmaterial/cli generate
+
 # Using npx
 npx billofmaterial@latest generate
-
-# Using pnpm
-pnpm dlx billofmaterial@latest generate
 
 # Using yarn
 yarn dlx billofmaterial@latest generate
@@ -62,23 +65,29 @@ billofmaterial generate
 ### Basic Usage
 
 ```bash
-# Generate SBOM for current directory
-billofmaterial generate
+# Generate SBOM for current directory (using pnpm dlx - recommended)
+pnpm dlx @billofmaterial generate
 
 # Generate SBOM for specific project
-billofmaterial generate -p ./my-project
+pnpm dlx @billofmaterial generate -p ./my-project
 
 # Generate SBOM with custom output
-billofmaterial generate -o ./docs/DEPENDENCIES.md
+pnpm dlx @billofmaterial generate -o ./docs/DEPENDENCIES.md
 
 # Generate both markdown and JSON
-billofmaterial generate --json
+pnpm dlx @billofmaterial generate --json
 
 # Skip dev dependencies
-billofmaterial generate --no-dev
+pnpm dlx @billofmaterial generate --no-dev
 
 # Skip bundle size analysis (faster)
-billofmaterial generate --no-bundle-size
+pnpm dlx @billofmaterial generate --no-bundle-size
+
+# Alternative: Using the CLI package directly
+pnpm dlx @billofmaterial/cli generate
+
+# Or if installed globally
+billofmaterial generate
 ```
 
 ### CLI Options
@@ -220,7 +229,7 @@ Command-line interface built with:
 
 ### Web App (`apps/web`)
 
-Next.js 15 application with:
+Next.js 16 application with:
 
 - React 19
 - Shadcn UI components
@@ -317,10 +326,6 @@ MIT License - see [LICENSE](LICENSE) file for details
 - Package data from [npm Registry](https://registry.npmjs.org/)
 - UI components from [Shadcn UI](https://ui.shadcn.com/)
 
-## 🚀 Publishing to npm
-
-This project uses GitHub Actions to automatically publish to npm. See [PUBLISHING.md](./PUBLISHING.md) for the complete guide.
-
 ### Quick Release
 
 ```bash
@@ -338,17 +343,6 @@ The GitHub Action will:
 - Publish `billofmaterial` CLI to npm
 - Create a GitHub release
 
-### Prerequisites
-
-1. Add `NPM_TOKEN` to GitHub Secrets (see [PUBLISHING.md](./PUBLISHING.md))
-2. Ensure you have npm publish rights
-
-## 📬 Support
-
-- 🐛 [Report Issues](https://github.com/yourusername/billofmaterial/issues)
-- 💬 [Discussions](https://github.com/yourusername/billofmaterial/discussions)
-- 📧 Email: support@billofmaterial.dev
-
 ## 🗺️ Roadmap
 
 - [ ] GitHub Action for CI/CD integration
@@ -361,4 +355,4 @@ The GitHub Action will:
 
 ---
 
-Made with ❤️ by the Bill of Material team
+Made with ❤️ by the Marcel Baklouti

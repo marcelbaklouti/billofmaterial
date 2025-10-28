@@ -14,14 +14,17 @@ Generate comprehensive Software Bill of Materials (SBOM) for your projects with 
 
 ## Installation
 
-You don't need to install it! Use `npx` or `pnpm dlx`:
+You don't need to install it! Use `pnpm dlx` (recommended) or `npx`:
 
 ```bash
+# Using pnpm (recommended)
+pnpm dlx @billofmaterial generate
+
+# Alternative: Using the CLI package directly
+pnpm dlx @billofmaterial/cli generate
+
 # Using npx
 npx billofmaterial@latest generate
-
-# Using pnpm
-pnpm dlx billofmaterial@latest generate
 
 # Using yarn
 yarn dlx billofmaterial@latest generate
