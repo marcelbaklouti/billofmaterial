@@ -114,8 +114,10 @@ async function getNpmSecurityScore(
   try {
     const html = await response.text();
     const $ = cheerio.load(html);
-    const score = $('.number span').first().text().trim() || 'N/A';
-    return score;
+    // Snyk redesigned their page - score is now in span.score-number (e.g. "95/100")
+    const scoreText = $('span.score-number').first().text().trim();
+    const match = scoreText.match(/(\d+)/);
+    return match && match[1] ? parseInt(match[1], 10) : 'N/A';
   } catch {
     return 'N/A';
   }
