@@ -34,7 +34,7 @@ export function ProgressModal({ isOpen, progress }: ProgressModalProps) {
                 )}
               </div>
 
-              {progress.current !== undefined && progress.total !== undefined && (
+              {progress.current !== undefined && progress.total !== undefined && progress.total > 0 && (
                 <div className="space-y-2">
                   <Progress
                     value={(progress.current / progress.total) * 100}

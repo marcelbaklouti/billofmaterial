@@ -3,20 +3,16 @@
  */
 export function sanitizeMarkdown(markdown: string): string {
   return markdown
-    // Remove non-printable characters except newlines and tabs
-    .replace(/[^\x20-\x7E\n\r\t]/g, '')
     // Normalize line endings
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
-    // Remove any potential JSX-like syntax that could confuse MDX
+    // Remove any potential script/style tags that could cause issues
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    // Escape any remaining problematic characters
-    .replace(/[{}]/g, (match) => `\\${match}`)
-    // Ensure proper table formatting
-    .replace(/\|\s*\|\s*\|\s*\|/g, '| | |')
-    // Remove empty table rows
-    .replace(/\|\s*\|\s*\|\s*\|\s*\|\s*\|\s*\|\s*\|\s*\|/g, '')
+    // Escape curly braces only in text content (not in URLs or code blocks)
+    // MDX interprets {} as JSX expressions, so we need to escape them
+    .replace(/(?<!`[^`]*){(?![^`]*`)/g, '\\{')
+    .replace(/(?<!`[^`]*)}(?![^`]*`)/g, '\\}')
     // Clean up multiple consecutive newlines
     .replace(/\n{3,}/g, '\n\n')
     // Trim whitespace
@@ -28,32 +24,25 @@ export function sanitizeMarkdown(markdown: string): string {
  */
 export function validateMarkdown(markdown: string): { isValid: boolean; errors: string[] } {
   const errors: string[] = [];
-  
+
   // Check for problematic patterns
-  if (markdown.includes('<script')) {
+  if (/<script/i.test(markdown)) {
     errors.push('Contains script tags');
   }
-  
-  if (markdown.includes('<style')) {
+
+  if (/<style/i.test(markdown)) {
     errors.push('Contains style tags');
   }
-  
-  if (markdown.includes('export ')) {
+
+  // Only flag actual JS export/import statements (start of line), not mentions in text
+  if (/^export\s+(default\s+)?/m.test(markdown)) {
     errors.push('Contains export statements');
   }
-  
-  if (markdown.includes('import ')) {
+
+  if (/^import\s+/m.test(markdown)) {
     errors.push('Contains import statements');
   }
-  
-  // Check for unclosed JSX-like tags
-  const openTags = markdown.match(/<[^\/][^>]*>/g) || [];
-  const closeTags = markdown.match(/<\/[^>]*>/g) || [];
-  
-  if (openTags.length !== closeTags.length) {
-    errors.push('Unmatched HTML tags');
-  }
-  
+
   return {
     isValid: errors.length === 0,
     errors

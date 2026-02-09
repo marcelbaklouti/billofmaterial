@@ -89,9 +89,11 @@ export function findAllPackageJsons(
     // Check if file matches any workspace pattern
     const fileDir = file.path.substring(0, file.path.lastIndexOf('/'));
     const matches = patterns.some(pattern => {
+      // Replace ** first (before *), otherwise ** becomes [^/]+[^/]+
       const regexPattern = pattern
+        .replace(/\*\*/g, '{{GLOBSTAR}}')
         .replace(/\*/g, '[^/]+')
-        .replace(/\*\*/g, '.+');
+        .replace(/\{\{GLOBSTAR\}\}/g, '.+');
       const regex = new RegExp(`^${regexPattern}$`);
       return regex.test(fileDir) || regex.test(file.path);
     });
