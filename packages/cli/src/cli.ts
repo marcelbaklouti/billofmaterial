@@ -153,7 +153,7 @@ program
   .command('version')
   .description('Display version information')
   .action(() => {
-    console.log(chalk.cyan('billofmaterial v0.0.1'));
+    console.log(chalk.cyan('billofmaterial v0.2.1'));
     console.log(chalk.dim('Generate comprehensive SBOM for your projects'));
   });
 

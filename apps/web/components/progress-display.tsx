@@ -29,7 +29,7 @@ export function ProgressDisplay({ progress, startTime }: ProgressDisplayProps) {
           </div>
         </div>
 
-        {progress.current !== undefined && progress.total !== undefined && (
+        {progress.current !== undefined && progress.total !== undefined && progress.total > 0 && (
           <Progress
             value={(progress.current / progress.total) * 100}
             className="h-2"

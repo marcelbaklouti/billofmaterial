@@ -68,7 +68,7 @@ async function fetchWithRetry(
     try {
       return await rateLimiter.execute(async () => {
         const res = await fetch(url);
-        if (!res.ok && attempt < retries) {
+        if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
         return res;
@@ -143,28 +143,31 @@ async function getBundleSize(
   }
 }
 
-async function getPopularityScore(
+async function getPopularityData(
   packageName: string,
   rateLimiter: RateLimiter,
   config: SBOMConfig
-): Promise<number> {
+): Promise<{ score: number; downloads: number }> {
   const url = `https://api.npmjs.org/downloads/point/last-week/${packageName}`;
   const response = await fetchWithRetry(url, rateLimiter, config.retryAttempts!, config.retryDelay!);
-  
-  if (!response) return 0;
-  
+
+  if (!response) return { score: 0, downloads: 0 };
+
   try {
     const data = await response.json();
     const downloads = data.downloads || 0;
 
-    if (downloads > 1000000) return 100;
-    if (downloads > 100000) return 90;
-    if (downloads > 10000) return 70;
-    if (downloads > 1000) return 50;
-    if (downloads > 100) return 30;
-    return 10;
+    let score: number;
+    if (downloads > 1000000) score = 100;
+    else if (downloads > 100000) score = 90;
+    else if (downloads > 10000) score = 70;
+    else if (downloads > 1000) score = 50;
+    else if (downloads > 100) score = 30;
+    else score = 10;
+
+    return { score, downloads };
   } catch {
-    return 0;
+    return { score: 0, downloads: 0 };
   }
 }
 
@@ -256,12 +259,13 @@ async function analyzeDependencies(
 
   const depsPromises = Object.entries(deps).map(async ([name, version]) => {
     try {
-      const [npmData, securityScore, bundleSize, popularityScore] = await Promise.all([
+      const [npmData, securityScore, bundleSize, popularityData] = await Promise.all([
         getNpmData(name, rateLimiter, config),
         getNpmSecurityScore(name, rateLimiter, config),
         getBundleSize(name, version, rateLimiter, config),
-        getPopularityScore(name, rateLimiter, config),
+        getPopularityData(name, rateLimiter, config),
       ]);
+      const popularityScore = popularityData.score;
 
       const lastPublish = npmData?.time?.modified || npmData?.time?.created;
       const daysSinceUpdate = lastPublish
@@ -273,7 +277,7 @@ async function analyzeDependencies(
       const homepage = npmData?.homepage || npmData?.repository?.url || '';
 
       const latestVersion = npmData?.['dist-tags']?.latest || version;
-      const currentVersion = version.replace(/^[\^~>=<]/, ''); // Remove version prefix
+      const currentVersion = version.replace(/^[\^~>=<\s]+/, ''); // Remove version prefix chars (^, ~, >=, etc.)
       const versionData = npmData?.versions?.[latestVersion];
 
       // Check if package is outdated
@@ -300,7 +304,7 @@ async function analyzeDependencies(
         lastPublishDate: lastPublish
           ? new Date(lastPublish).toLocaleDateString()
           : 'Unknown',
-        weeklyDownloads: 0,
+        weeklyDownloads: popularityData.downloads,
         minifiedSize: convertToKb(bundleSize?.size && !name.startsWith('@types') ? bundleSize.size : 0),
         gzipSize: convertToKb(bundleSize?.gzip && !name.startsWith('@types') ? bundleSize.gzip : 0),
         hasVulnerabilities: false,
@@ -458,9 +462,7 @@ function generateMarkdown(result: SBOMResult): string {
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;')
-      .replace(/\//g, '&#x2F;') // Escape forward slashes that can cause issues
-      .replace(/\\/g, '&#x5C;'); // Escape backslashes
+      .replace(/'/g, '&#39;');
   };
   
   const riskBadge = (riskLevel: string) => {
@@ -674,7 +676,9 @@ function generateSPDX(result: SBOMResult, rootPackageJson: PackageJson): SPDXDoc
         continue;
       }
 
-      const downloadUrl = `https://registry.npmjs.org/${dep.name}/-/${dep.name}-${dep.version}.tgz`;
+      // For scoped packages like @scope/pkg, the tgz filename is just "pkg-version.tgz"
+      const tgzName = dep.name.startsWith('@') ? dep.name.split('/')[1] : dep.name;
+      const downloadUrl = `https://registry.npmjs.org/${dep.name}/-/${tgzName}-${dep.version}.tgz`;
       
       spdxPackages.push({
         SPDXID: spdxId,

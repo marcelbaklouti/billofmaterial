@@ -19,23 +19,34 @@ function getCached(key: string): any | null {
   return cached.data;
 }
 
+const MAX_CACHE_SIZE = 50;
+
 function setCache(key: string, data: any, ttl: number = 300000): void {
+  // Evict expired entries and enforce size limit before adding
+  if (cache.size >= MAX_CACHE_SIZE) {
+    const now = Date.now();
+    for (const [k, cached] of cache.entries()) {
+      if (now - cached.timestamp > cached.ttl) {
+        cache.delete(k);
+      }
+    }
+    // If still over limit, remove oldest entries
+    if (cache.size >= MAX_CACHE_SIZE) {
+      const oldest = [...cache.entries()]
+        .sort((a, b) => a[1].timestamp - b[1].timestamp)
+        .slice(0, cache.size - MAX_CACHE_SIZE + 1);
+      for (const [k] of oldest) {
+        cache.delete(k);
+      }
+    }
+  }
+
   cache.set(key, {
     data,
     timestamp: Date.now(),
     ttl
   });
 }
-
-// Clean up old cache entries periodically
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, cached] of cache.entries()) {
-    if (now - cached.timestamp > cached.ttl) {
-      cache.delete(key);
-    }
-  }
-}, 60000); // Clean every minute
 
 interface UploadedFile {
   path: string;
@@ -57,8 +68,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create cache key based on package.json content
-    const cacheKey = `sbom_${Buffer.from(packageJson).toString('base64').slice(0, 32)}`;
+    // Create cache key based on package.json content and uploaded files
+    const { createHash } = await import('crypto');
+    const hashInput = packageJson + JSON.stringify(files.map(f => f.path).sort());
+    const cacheKey = `sbom_${createHash('sha256').update(hashInput).digest('hex').slice(0, 48)}`;
     
     // Check cache first
     const cached = getCached(cacheKey);
