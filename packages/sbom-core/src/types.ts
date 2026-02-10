@@ -8,6 +8,8 @@ export interface SBOMConfig {
   includeAudit?: boolean;
   includeOutdated?: boolean;
   includeDependencyTree?: boolean;
+  includeVulnerabilities?: boolean;
+  includeTransitiveDeps?: boolean;
   exportCsv?: boolean;
   exportJson?: boolean;
   cacheEnabled?: boolean;
@@ -42,7 +44,42 @@ export interface DependencyInfo {
   dependencyCount: number;
   peerDependencies: Record<string, string>;
   risk?: RiskAssessment;
+  // P0: Cryptographic hashes (CISA 2025 mandatory)
+  integrity?: string;         // SHA-512 integrity hash from npm
+  shasum?: string;            // SHA-1 hash from npm
+  // P0: Supplier/Producer (CISA 2025 mandatory)
+  supplier?: SupplierInfo;
+  // P1: Vulnerability data (ISO 27001 A.8.28)
+  vulnerabilities?: VulnerabilityInfo[];
+  // P1: Deprecated/EOL status
+  deprecated?: string | false;
+  // P2: Transitive dependencies
+  transitiveDependencies?: string[];
 }
+
+export interface SupplierInfo {
+  name: string;
+  email?: string;
+  url?: string;
+}
+
+export interface VulnerabilityInfo {
+  id: string;               // e.g. "GHSA-xxxx" or "CVE-xxxx"
+  aliases?: string[];        // e.g. ["CVE-2021-xxxx"]
+  summary: string;
+  severity: VulnSeverity;
+  cvssScore?: number;
+  cweIds?: string[];
+  fixedIn?: string;          // version where fixed
+  url?: string;
+  // P2: VEX status
+  vexStatus?: VEXStatus;
+  vexJustification?: string;
+}
+
+export type VulnSeverity = 'NONE' | 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL' | 'UNKNOWN';
+
+export type VEXStatus = 'not_affected' | 'affected' | 'fixed' | 'under_investigation';
 
 export interface RiskAssessment {
   score: number;
@@ -55,6 +92,23 @@ export interface PackageData {
   packagePath?: string;
   dependencies: DependencyInfo[];
   devDependencies: DependencyInfo[];
+}
+
+// P0: Known Unknowns tracking (CISA 2025 mandatory)
+export interface KnownUnknown {
+  name: string;
+  version: string;
+  reason: string;
+  category: 'unknown' | 'redacted' | 'not_applicable' | 'fetch_failed';
+}
+
+// P0: SBOM Coverage declaration (CISA 2025 mandatory)
+export interface SBOMCoverage {
+  depth: 'top-level' | 'transitive' | 'full';
+  coverageNote?: string;
+  analysisTimestamp: string;
+  toolName: string;
+  toolVersion: string;
 }
 
 export interface SBOMResult {
@@ -70,6 +124,15 @@ export interface SBOMResult {
   csv?: string;
   json?: string;
   spdx?: SPDXDocument;
+  cyclonedx?: CycloneDXDocument;
+  // P0: Coverage declaration
+  coverage?: SBOMCoverage;
+  // P0: Known unknowns
+  knownUnknowns?: KnownUnknown[];
+  // P2: SBOM integrity
+  integrityHash?: string;
+  // P3: ISO 27001 compliance
+  complianceReport?: ComplianceReport;
 }
 
 export interface AuditData {
@@ -140,6 +203,19 @@ export interface SBOMInsights {
     lastUpdate: string;
     daysSince: number;
   }>;
+  deprecatedPackages: Array<{
+    name: string;
+    version: string;
+    reason: string;
+  }>;
+  vulnerabilitySummary: {
+    total: number;
+    critical: number;
+    high: number;
+    moderate: number;
+    low: number;
+    packagesAffected: number;
+  };
   metrics: {
     totalDependencies: number;
     productionDependencies: number;
@@ -214,3 +290,124 @@ export interface SPDXRelationship {
   relatedSpdxElement: string;
 }
 
+// CycloneDX 1.5 Types (ECMA-424)
+export interface CycloneDXDocument {
+  bomFormat: 'CycloneDX';
+  specVersion: '1.5';
+  serialNumber: string;
+  version: number;
+  metadata: CycloneDXMetadata;
+  components: CycloneDXComponent[];
+  dependencies: CycloneDXDependency[];
+  vulnerabilities?: CycloneDXVulnerability[];
+}
+
+export interface CycloneDXMetadata {
+  timestamp: string;
+  tools: Array<{
+    vendor: string;
+    name: string;
+    version: string;
+  }>;
+  component?: {
+    type: string;
+    name: string;
+    version: string;
+    'bom-ref': string;
+  };
+  lifecycles?: Array<{
+    phase: string;
+  }>;
+}
+
+export interface CycloneDXComponent {
+  type: 'library' | 'framework' | 'application';
+  name: string;
+  version: string;
+  'bom-ref': string;
+  purl?: string;
+  description?: string;
+  licenses?: Array<{
+    license: {
+      id?: string;
+      name?: string;
+    };
+  }>;
+  hashes?: Array<{
+    alg: string;
+    content: string;
+  }>;
+  supplier?: {
+    name: string;
+    url?: string[];
+  };
+  externalReferences?: Array<{
+    type: string;
+    url: string;
+  }>;
+  properties?: Array<{
+    name: string;
+    value: string;
+  }>;
+}
+
+export interface CycloneDXDependency {
+  ref: string;
+  dependsOn?: string[];
+}
+
+export interface CycloneDXVulnerability {
+  'bom-ref'?: string;
+  id: string;
+  source?: {
+    name: string;
+    url?: string;
+  };
+  ratings?: Array<{
+    score?: number;
+    severity?: string;
+    method?: string;
+    vector?: string;
+  }>;
+  cwes?: number[];
+  description?: string;
+  recommendation?: string;
+  advisories?: Array<{
+    url: string;
+  }>;
+  affects?: Array<{
+    ref: string;
+    versions?: Array<{
+      version: string;
+      status: string;
+    }>;
+  }>;
+  analysis?: {
+    state: VEXStatus;
+    justification?: string;
+    detail?: string;
+  };
+}
+
+// P3: ISO 27001 Compliance Report
+export interface ComplianceReport {
+  standard: string;
+  generatedAt: string;
+  overallStatus: 'compliant' | 'partially_compliant' | 'non_compliant';
+  controls: ComplianceControl[];
+  summary: {
+    totalControls: number;
+    passed: number;
+    warnings: number;
+    failed: number;
+  };
+}
+
+export interface ComplianceControl {
+  id: string;
+  name: string;
+  status: 'pass' | 'warning' | 'fail';
+  description: string;
+  findings: string[];
+  recommendation?: string;
+}
