@@ -9,7 +9,7 @@ import { Button } from '@workspace/ui/components/button';
 import { Textarea } from '@workspace/ui/components/textarea';
 import { Badge } from '@workspace/ui/components/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@workspace/ui/components/tabs';
-import { Download, Copy, CheckCheck, Package, AlertTriangle, Scale, Archive, Eye, Code2, Ghost, FileJson } from 'lucide-react';
+import { Download, Copy, CheckCheck, Package, AlertTriangle, Scale, Archive, Eye, Code2, Ghost, FileJson, Shield, ShieldAlert, ShieldCheck, CircleSlash, FileWarning } from 'lucide-react';
 import { sanitizeMarkdown, validateMarkdown } from '../lib/markdown-sanitizer';
 
 interface SBOMResultProps {
@@ -89,6 +89,29 @@ export function SBOMResult({ result }: SBOMResultProps) {
     }
   }, [result.spdx]);
 
+  const handleDownloadCycloneDX = useCallback(() => {
+    if (result.cyclonedx) {
+      const cdxJson = JSON.stringify(result.cyclonedx, null, 2);
+      const blob = new Blob([cdxJson], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'sbom-cyclonedx.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  }, [result.cyclonedx]);
+
+  const handleCopyCycloneDX = useCallback(() => {
+    if (result.cyclonedx) {
+      navigator.clipboard.writeText(JSON.stringify(result.cyclonedx, null, 2));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, [result.cyclonedx]);
+
   const insights = result.insights;
 
   return (
@@ -163,6 +186,24 @@ export function SBOMResult({ result }: SBOMResultProps) {
               </div>
             </div>
           </Card>
+
+          {insights.vulnerabilitySummary && insights.vulnerabilitySummary.total > 0 && (
+            <Card className="p-5 hover:shadow-md transition-shadow border-red-500/30">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-500/10 rounded-lg">
+                  <ShieldAlert className="w-5 h-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm text-muted-foreground">Vulnerabilities</p>
+                  <p className="text-2xl font-bold">{insights.vulnerabilitySummary.total}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {insights.vulnerabilitySummary.critical > 0 && <span className="text-red-600 dark:text-red-400">{insights.vulnerabilitySummary.critical} critical </span>}
+                    {insights.vulnerabilitySummary.high > 0 && <span className="text-orange-600 dark:text-orange-400">{insights.vulnerabilitySummary.high} high</span>}
+                  </p>
+                </div>
+              </div>
+            </Card>
+          )}
         </div>
       )}
 
@@ -314,13 +355,92 @@ export function SBOMResult({ result }: SBOMResultProps) {
               </div>
             </Card>
           )}
+
+          {/* Deprecated Packages */}
+          {insights.deprecatedPackages && insights.deprecatedPackages.length > 0 && (
+            <Card className="p-6 border-red-500/20">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <CircleSlash className="w-5 h-5 text-red-600 dark:text-red-400" />
+                Deprecated ({insights.deprecatedPackages.length})
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Packages marked as deprecated by maintainers
+              </p>
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {insights.deprecatedPackages.map((pkg: any) => (
+                  <div key={pkg.name} className="p-2 bg-red-500/5 border border-red-500/20 rounded">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium truncate flex-1 mr-2">{pkg.name}</span>
+                    </div>
+                    {pkg.reason && (
+                      <p className="text-xs text-muted-foreground">{pkg.reason}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
         </div>
+      )}
+
+      {/* Compliance Report */}
+      {result.complianceReport && (
+        <Card className="p-6">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <Shield className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            ISO 27001 Compliance Report
+          </h3>
+          <div className="flex items-center gap-4 mb-4">
+            <Badge variant={result.complianceReport.overallStatus === 'compliant' ? 'default' : result.complianceReport.overallStatus === 'partial' ? 'secondary' : 'destructive'}>
+              {result.complianceReport.overallStatus === 'compliant' ? 'Compliant' : result.complianceReport.overallStatus === 'partial' ? 'Partially Compliant' : 'Non-Compliant'}
+            </Badge>
+            <span className="text-sm text-muted-foreground">
+              Generated: {new Date(result.complianceReport.timestamp).toLocaleDateString()}
+            </span>
+          </div>
+          <div className="space-y-3">
+            {result.complianceReport.controls.map((control: any) => (
+              <div key={control.id} className={`p-4 rounded-lg border ${
+                control.status === 'pass' ? 'border-green-500/20 bg-green-500/5' :
+                control.status === 'warning' ? 'border-yellow-500/20 bg-yellow-500/5' :
+                'border-red-500/20 bg-red-500/5'
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    {control.status === 'pass' ? (
+                      <ShieldCheck className="w-4 h-4 text-green-600 dark:text-green-400" />
+                    ) : control.status === 'warning' ? (
+                      <FileWarning className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
+                    ) : (
+                      <ShieldAlert className="w-4 h-4 text-red-600 dark:text-red-400" />
+                    )}
+                    <span className="font-medium text-sm">{control.id}: {control.name}</span>
+                  </div>
+                  <Badge variant={control.status === 'pass' ? 'default' : control.status === 'warning' ? 'secondary' : 'destructive'}>
+                    {control.status}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mb-2">{control.description}</p>
+                <ul className="text-xs space-y-1">
+                  {control.findings.map((finding: string, i: number) => (
+                    <li key={i} className="text-muted-foreground">- {finding}</li>
+                  ))}
+                </ul>
+                {control.recommendation && (
+                  <p className="text-xs mt-2 text-yellow-700 dark:text-yellow-300">
+                    Recommendation: {control.recommendation}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
       )}
 
       {/* Project Type Badge */}
       <div className="flex items-center gap-2">
         <Badge variant={result.isMonorepo ? 'default' : 'secondary'}>
-          {result.isMonorepo ? '📦 Monorepo' : '📦 Single Package'}
+          {result.isMonorepo ? 'Monorepo' : 'Single Package'}
         </Badge>
         <span className="text-sm text-muted-foreground">
           {result.packages.length} package{result.packages.length !== 1 ? 's' : ''} analyzed
@@ -370,7 +490,11 @@ export function SBOMResult({ result }: SBOMResultProps) {
               </TabsTrigger>
               <TabsTrigger value="spdx" className="gap-2 cursor-pointer">
                 <FileJson className="w-4 h-4" />
-                SPDX (ISO/IEC 5962:2021)
+                SPDX 2.3
+              </TabsTrigger>
+              <TabsTrigger value="cyclonedx" className="gap-2 cursor-pointer" disabled={!result.cyclonedx}>
+                <Shield className="w-4 h-4" />
+                CycloneDX 1.5
               </TabsTrigger>
             </TabsList>
           </div>
@@ -586,8 +710,73 @@ export function SBOMResult({ result }: SBOMResultProps) {
               />
             </div>
           </TabsContent>
+
+          <TabsContent value="cyclonedx" className="mt-4">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 bg-green-500/5 border border-green-500/20 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-500/10 rounded">
+                    <Shield className="w-5 h-5 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-sm">ECMA-424 Compliant</h4>
+                    <p className="text-xs text-muted-foreground">
+                      CycloneDX 1.5 format - OWASP standard with vulnerability and VEX support
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCopyCycloneDX}
+                    disabled={copied || !result.cyclonedx}
+                  >
+                    {copied ? (
+                      <>
+                        <CheckCheck className="w-4 h-4" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4" />
+                        Copy
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleDownloadCycloneDX}
+                    disabled={!result.cyclonedx}
+                  >
+                    <Download className="w-4 h-4" />
+                    Download CycloneDX
+                  </Button>
+                </div>
+              </div>
+              <Textarea
+                value={result.cyclonedx ? JSON.stringify(result.cyclonedx, null, 2) : 'CycloneDX data not available'}
+                readOnly
+                className="font-mono text-xs min-h-[300px] max-h-[500px] resize-none"
+              />
+            </div>
+          </TabsContent>
         </Tabs>
       </Card>
+
+      {/* SBOM Integrity */}
+      {result.integrityHash && (
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <ShieldCheck className="w-4 h-4 text-green-600 dark:text-green-400" />
+            <div>
+              <p className="text-sm font-medium">SBOM Integrity Hash</p>
+              <p className="text-xs font-mono text-muted-foreground break-all">{result.integrityHash}</p>
+            </div>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

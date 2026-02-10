@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import { createHash } from 'crypto';
 import {
   GeneratorOptions,
   SBOMResult,
@@ -10,13 +11,28 @@ import {
   SBOMInsights,
   SPDXDocument,
   SPDXPackage,
-  SPDXRelationship
+  SPDXRelationship,
+  VulnerabilityInfo,
+  VulnSeverity,
+  KnownUnknown,
+  SBOMCoverage,
+  CycloneDXDocument,
+  CycloneDXComponent,
+  CycloneDXDependency,
+  CycloneDXVulnerability,
+  ComplianceReport,
+  ComplianceControl,
+  SupplierInfo,
 } from './types';
 import { detectMonorepo, findAllPackageJsons } from './monorepo';
+
+const TOOL_VERSION = '0.3.0';
 
 const DEFAULT_CONFIG: SBOMConfig = {
   includeDevDeps: true,
   includeBundleSize: true,
+  includeVulnerabilities: true,
+  includeTransitiveDeps: false,
   securityScoreThreshold: 70,
   maxConcurrentRequests: 5,
   retryAttempts: 3,
@@ -62,12 +78,13 @@ async function fetchWithRetry(
   url: string,
   rateLimiter: RateLimiter,
   retries: number = 3,
-  delay: number = 1000
+  delay: number = 1000,
+  options?: RequestInit
 ): Promise<Response | null> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       return await rateLimiter.execute(async () => {
-        const res = await fetch(url);
+        const res = await fetch(url, options);
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
@@ -91,9 +108,9 @@ async function getNpmData(
 ): Promise<any> {
   const url = `https://registry.npmjs.org/${packageName}`;
   const response = await fetchWithRetry(url, rateLimiter, config.retryAttempts!, config.retryDelay!);
-  
+
   if (!response) return null;
-  
+
   try {
     return await response.json();
   } catch {
@@ -108,9 +125,9 @@ async function getNpmSecurityScore(
 ): Promise<string | number> {
   const url = `https://snyk.io/advisor/npm-package/${packageName}`;
   const response = await fetchWithRetry(url, rateLimiter, config.retryAttempts!, config.retryDelay!);
-  
+
   if (!response) return 'N/A';
-  
+
   try {
     const html = await response.text();
     const $ = cheerio.load(html);
@@ -135,9 +152,9 @@ async function getBundleSize(
 
   const url = `https://bundlephobia.com/api/size?package=${packageName}@${version}`;
   const response = await fetchWithRetry(url, rateLimiter, config.retryAttempts!, config.retryDelay!);
-  
+
   if (!response) return null;
-  
+
   try {
     return await response.json();
   } catch {
@@ -173,6 +190,123 @@ async function getPopularityData(
   }
 }
 
+// P1: Vulnerability detection via OSV.dev API
+async function getVulnerabilities(
+  packageName: string,
+  version: string,
+  rateLimiter: RateLimiter,
+  config: SBOMConfig
+): Promise<VulnerabilityInfo[]> {
+  if (!config.includeVulnerabilities) return [];
+
+  const url = 'https://api.osv.dev/v1/query';
+  const response = await fetchWithRetry(url, rateLimiter, config.retryAttempts!, config.retryDelay!, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      package: { name: packageName, ecosystem: 'npm' },
+      version,
+    }),
+  });
+
+  if (!response) return [];
+
+  try {
+    const data = await response.json();
+    if (!data.vulns || !Array.isArray(data.vulns)) return [];
+
+    return data.vulns.map((vuln: any): VulnerabilityInfo => {
+      // Extract severity from database_specific or severity field
+      let severity: VulnSeverity = 'UNKNOWN';
+      let cvssScore: number | undefined;
+
+      if (vuln.severity && vuln.severity.length > 0) {
+        const sev = vuln.severity[0];
+        cvssScore = sev.score;
+        if (sev.type === 'CVSS_V3' && sev.score !== undefined) {
+          if (sev.score >= 9.0) severity = 'CRITICAL';
+          else if (sev.score >= 7.0) severity = 'HIGH';
+          else if (sev.score >= 4.0) severity = 'MODERATE';
+          else if (sev.score > 0) severity = 'LOW';
+          else severity = 'NONE';
+        }
+      } else if (vuln.database_specific?.severity) {
+        severity = vuln.database_specific.severity.toUpperCase() as VulnSeverity;
+      }
+
+      // Extract fixed version
+      let fixedIn: string | undefined;
+      const affected = vuln.affected?.[0];
+      if (affected?.ranges) {
+        for (const range of affected.ranges) {
+          for (const event of range.events || []) {
+            if (event.fixed) {
+              fixedIn = event.fixed;
+              break;
+            }
+          }
+        }
+      }
+
+      // Extract CWE IDs
+      const cweIds = vuln.database_specific?.cwe_ids || [];
+
+      // Find advisory URL
+      const advisoryRef = vuln.references?.find((r: any) => r.type === 'ADVISORY');
+
+      return {
+        id: vuln.id,
+        aliases: vuln.aliases || [],
+        summary: vuln.summary || vuln.details?.substring(0, 200) || 'No description',
+        severity,
+        cvssScore,
+        cweIds,
+        fixedIn,
+        url: advisoryRef?.url || vuln.references?.[0]?.url,
+        vexStatus: fixedIn ? 'affected' : 'under_investigation',
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+// P0: Extract supplier/producer info from npm data
+function extractSupplier(npmData: any): SupplierInfo | undefined {
+  if (!npmData) return undefined;
+
+  // Prefer author, then first maintainer
+  if (npmData.author) {
+    if (typeof npmData.author === 'string') {
+      return { name: npmData.author };
+    }
+    return {
+      name: npmData.author.name || 'Unknown',
+      email: npmData.author.email,
+      url: npmData.author.url,
+    };
+  }
+
+  if (npmData.maintainers && npmData.maintainers.length > 0) {
+    const m = npmData.maintainers[0];
+    return {
+      name: m.name || 'Unknown',
+      email: m.email,
+    };
+  }
+
+  return undefined;
+}
+
+// P0: Extract cryptographic hashes from npm version data
+function extractHashes(versionData: any): { integrity?: string; shasum?: string } {
+  if (!versionData?.dist) return {};
+  return {
+    integrity: versionData.dist.integrity,
+    shasum: versionData.dist.shasum,
+  };
+}
+
 function calculateMaintenanceScore(npmData: any): number {
   if (!npmData) return 0;
 
@@ -197,17 +331,18 @@ function calculateRiskScore(packageData: DependencyInfo): RiskAssessment {
   let totalScore = 0;
 
   const riskWeights = {
-    security: 0.4,
-    maintenance: 0.3,
-    popularity: 0.2,
+    security: 0.35,
+    maintenance: 0.25,
+    popularity: 0.15,
     license: 0.1,
+    vulnerability: 0.15,
   };
 
   // Security score
-  const securityScore = typeof packageData.securityScore === 'number' 
-    ? packageData.securityScore 
+  const securityScore = typeof packageData.securityScore === 'number'
+    ? packageData.securityScore
     : parseInt(String(packageData.securityScore)) || 0;
-  
+
   if (securityScore < 70) {
     factors.push(`Low security score: ${securityScore}/100`);
   }
@@ -235,8 +370,30 @@ function calculateRiskScore(packageData: DependencyInfo): RiskAssessment {
   }
   totalScore += licenseScore * riskWeights.license;
 
-  if (packageData.hasVulnerabilities) {
-    factors.push('Has known vulnerabilities');
+  // Vulnerability score (new)
+  const vulns = packageData.vulnerabilities || [];
+  if (vulns.length > 0) {
+    const criticalCount = vulns.filter(v => v.severity === 'CRITICAL').length;
+    const highCount = vulns.filter(v => v.severity === 'HIGH').length;
+
+    if (criticalCount > 0) {
+      factors.push(`${criticalCount} critical vulnerabilit${criticalCount > 1 ? 'ies' : 'y'}`);
+      totalScore += 0 * riskWeights.vulnerability; // 0 score for critical vulns
+    } else if (highCount > 0) {
+      factors.push(`${highCount} high-severity vulnerabilit${highCount > 1 ? 'ies' : 'y'}`);
+      totalScore += 0.3 * riskWeights.vulnerability;
+    } else {
+      factors.push(`${vulns.length} known vulnerabilit${vulns.length > 1 ? 'ies' : 'y'}`);
+      totalScore += 0.6 * riskWeights.vulnerability;
+    }
+    packageData.hasVulnerabilities = true;
+  } else {
+    totalScore += 1 * riskWeights.vulnerability;
+  }
+
+  // Deprecated penalty
+  if (packageData.deprecated) {
+    factors.push('Package is deprecated');
     totalScore *= 0.5;
   }
 
@@ -250,11 +407,12 @@ function calculateRiskScore(packageData: DependencyInfo): RiskAssessment {
 async function analyzeDependencies(
   deps: Record<string, string>,
   config: SBOMConfig,
+  knownUnknowns: KnownUnknown[],
   onProgress?: (current: number, total: number) => void
 ): Promise<{ dependencies: DependencyInfo[]; outdatedPackages: Record<string, any> }> {
   const rateLimiter = new RateLimiter(config.maxConcurrentRequests!);
   const convertToKb = (bytes: number) => Math.round(bytes / 1024);
-  
+
   const total = Object.keys(deps).length;
   let current = 0;
   const outdatedPackages: Record<string, any> = {};
@@ -269,6 +427,19 @@ async function analyzeDependencies(
       ]);
       const popularityScore = popularityData.score;
 
+      // P0: Track known unknowns for failed fetches
+      if (!npmData) {
+        knownUnknowns.push({
+          name,
+          version: version.replace(/^[\^~>=<\s]+/, ''),
+          reason: 'Failed to fetch package data from npm registry',
+          category: 'fetch_failed',
+        });
+        current++;
+        if (onProgress) onProgress(current, total);
+        return null;
+      }
+
       const lastPublish = npmData?.time?.modified || npmData?.time?.created;
       const daysSinceUpdate = lastPublish
         ? (Date.now() - new Date(lastPublish).getTime()) / (1000 * 60 * 60 * 24)
@@ -279,8 +450,9 @@ async function analyzeDependencies(
       const homepage = npmData?.homepage || npmData?.repository?.url || '';
 
       const latestVersion = npmData?.['dist-tags']?.latest || version;
-      const currentVersion = version.replace(/^[\^~>=<\s]+/, ''); // Remove version prefix chars (^, ~, >=, etc.)
-      const versionData = npmData?.versions?.[latestVersion];
+      const currentVersion = version.replace(/^[\^~>=<\s]+/, ''); // Remove version prefix chars
+      const currentVersionData = npmData?.versions?.[currentVersion];
+      const latestVersionData = npmData?.versions?.[latestVersion];
 
       // Check if package is outdated
       if (latestVersion !== currentVersion && npmData?.['dist-tags']?.latest) {
@@ -292,10 +464,27 @@ async function analyzeDependencies(
         };
       }
 
+      // P0: Extract cryptographic hashes
+      const hashes = extractHashes(currentVersionData);
+
+      // P0: Extract supplier info
+      const supplier = extractSupplier(npmData);
+
+      // P1: Detect deprecated status
+      const deprecated = currentVersionData?.deprecated || false;
+
+      // P1: Fetch vulnerabilities from OSV.dev
+      const vulnerabilities = await getVulnerabilities(name, currentVersion, rateLimiter, config);
+
+      // P2: Transitive dependencies
+      const transitiveDeps = config.includeTransitiveDeps
+        ? Object.keys(currentVersionData?.dependencies || {})
+        : undefined;
+
       const packageData: DependencyInfo = {
         name,
         description: npmData?.description || 'N/A',
-        version: currentVersion, // Use current version from package.json
+        version: currentVersion,
         license,
         licenseProblematic: problematicLicenses.includes(license),
         homepage,
@@ -309,9 +498,15 @@ async function analyzeDependencies(
         weeklyDownloads: popularityData.downloads,
         minifiedSize: convertToKb(bundleSize?.size && !name.startsWith('@types') ? bundleSize.size : 0),
         gzipSize: convertToKb(bundleSize?.gzip && !name.startsWith('@types') ? bundleSize.gzip : 0),
-        hasVulnerabilities: false,
-        dependencyCount: Object.keys(versionData?.dependencies || {}).length,
-        peerDependencies: versionData?.peerDependencies || {},
+        hasVulnerabilities: vulnerabilities.length > 0,
+        dependencyCount: Object.keys(latestVersionData?.dependencies || {}).length,
+        peerDependencies: latestVersionData?.peerDependencies || {},
+        integrity: hashes.integrity,
+        shasum: hashes.shasum,
+        supplier,
+        vulnerabilities: vulnerabilities.length > 0 ? vulnerabilities : undefined,
+        deprecated: deprecated || undefined,
+        transitiveDependencies: transitiveDeps,
       };
 
       packageData.risk = calculateRiskScore(packageData);
@@ -324,6 +519,12 @@ async function analyzeDependencies(
       return packageData;
     } catch (error) {
       console.error(`Error processing ${name}:`, error);
+      knownUnknowns.push({
+        name,
+        version: version.replace(/^[\^~>=<\s]+/, ''),
+        reason: `Processing error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        category: 'fetch_failed',
+      });
       current++;
       if (onProgress) {
         onProgress(current, total);
@@ -334,7 +535,7 @@ async function analyzeDependencies(
 
   const results = await Promise.all(depsPromises);
   const filtered = results.filter((r: DependencyInfo | null): r is DependencyInfo => r !== null);
-  
+
   // Sort by risk score (highest risk first)
   filtered.sort((a: DependencyInfo, b: DependencyInfo) => (a.risk?.score || 100) - (b.risk?.score || 100));
 
@@ -347,20 +548,40 @@ function generateInsights(
   auditData?: any
 ): SBOMInsights {
   const allDeps: DependencyInfo[] = [];
-  
+
   for (const pkg of packages) {
     allDeps.push(...pkg.dependencies, ...pkg.devDependencies);
   }
 
   // Sort top risks by score (lowest score = highest risk)
   const topRisks = [...allDeps]
-    .filter((d) => d.risk && d.risk.score < 70) // Score below 70 is high risk
+    .filter((d) => d.risk && d.risk.score < 70)
     .sort((a, b) => (a.risk?.score || 100) - (b.risk?.score || 100))
     .slice(0, 10)
     .map((d) => ({
       name: d.name,
       score: d.risk!.score,
       factors: d.risk!.factors,
+    }));
+
+  // Vulnerability summary
+  const allVulns = allDeps.flatMap(d => d.vulnerabilities || []);
+  const vulnerabilitySummary = {
+    total: allVulns.length,
+    critical: allVulns.filter(v => v.severity === 'CRITICAL').length,
+    high: allVulns.filter(v => v.severity === 'HIGH').length,
+    moderate: allVulns.filter(v => v.severity === 'MODERATE').length,
+    low: allVulns.filter(v => v.severity === 'LOW').length,
+    packagesAffected: allDeps.filter(d => (d.vulnerabilities?.length || 0) > 0).length,
+  };
+
+  // Deprecated packages
+  const deprecatedPackages = allDeps
+    .filter(d => d.deprecated)
+    .map(d => ({
+      name: d.name,
+      version: d.version,
+      reason: typeof d.deprecated === 'string' ? d.deprecated : 'Package is deprecated',
     }));
 
   const insights: SBOMInsights = {
@@ -391,14 +612,16 @@ function generateInsights(
         lastUpdate: d.lastPublishDate,
         daysSince: d.daysSinceUpdate,
       })),
+    deprecatedPackages,
+    vulnerabilitySummary,
     metrics: {
       totalDependencies: allDeps.length,
       productionDependencies: packages.reduce((sum, p) => sum + p.dependencies.length, 0),
       devDependencies: packages.reduce((sum, p) => sum + p.devDependencies.length, 0),
       averageSecurityScore: Math.round(
         allDeps.reduce((sum, d) => {
-          const score = typeof d.securityScore === 'number' 
-            ? d.securityScore 
+          const score = typeof d.securityScore === 'number'
+            ? d.securityScore
             : parseInt(String(d.securityScore)) || 0;
           return sum + score;
         }, 0) / (allDeps.length || 1)
@@ -406,17 +629,17 @@ function generateInsights(
     },
   };
 
-  // Quick wins (easy updates with security improvements or packages with low security scores)
+  // Quick wins
   if (outdatedPackages && Object.keys(outdatedPackages).length > 0) {
     const quickWinCandidates = Object.entries(outdatedPackages)
       .map(([name, info]: [string, any]) => {
         const dep = allDeps.find((d) => d.name === name);
         if (!dep) return null;
-        
-        const secScore = typeof dep.securityScore === 'number' 
-          ? dep.securityScore 
+
+        const secScore = typeof dep.securityScore === 'number'
+          ? dep.securityScore
           : parseInt(String(dep.securityScore)) || 0;
-        
+
         return {
           name,
           current: info.current,
@@ -428,25 +651,17 @@ function generateInsights(
       })
       .filter((item): item is NonNullable<typeof item> => item !== null)
       .sort((a, b) => {
-        // Prioritize by security score (lower is worse)
-        if (a.numericScore !== b.numericScore) {
-          return a.numericScore - b.numericScore;
-        }
-        // Then by risk score (lower is worse)
+        if (a.numericScore !== b.numericScore) return a.numericScore - b.numericScore;
         return a.risk - b.risk;
       })
       .slice(0, 10)
       .map(({ name, current, latest, securityScore }) => ({
-        name,
-        current,
-        latest,
-        securityScore,
+        name, current, latest, securityScore,
       }));
 
     insights.quickWins = quickWinCandidates;
   }
 
-  // Add vulnerability counts from audit data
   if (auditData?.metadata?.vulnerabilities) {
     insights.metrics.vulnerabilities = auditData.metadata.vulnerabilities;
   }
@@ -456,8 +671,7 @@ function generateInsights(
 
 function generateMarkdown(result: SBOMResult): string {
   const { packages, isMonorepo, insights } = result;
-  
-  // Escape HTML entities to prevent MDX parsing issues
+
   const escapeHtml = (text: string): string => {
     return text
       .replace(/&/g, '&amp;')
@@ -466,7 +680,7 @@ function generateMarkdown(result: SBOMResult): string {
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
   };
-  
+
   const riskBadge = (riskLevel: string) => {
     const colors = { Low: 'green', Medium: 'yellow', High: 'red' };
     return `![Risk: ${escapeHtml(riskLevel)}](https://img.shields.io/badge/Risk-${escapeHtml(riskLevel)}-${colors[riskLevel as keyof typeof colors]})`;
@@ -478,40 +692,57 @@ function generateMarkdown(result: SBOMResult): string {
     return deps
       .map((d) => {
         const riskBadgeStr = d.risk ? riskBadge(d.risk.riskLevel) : '';
-        const licenseBadge = d.licenseProblematic ? `⚠️ ${d.license}` : d.license;
+        const licenseBadge = d.licenseProblematic ? `[!] ${d.license}` : d.license;
+        const vulnBadge = d.vulnerabilities && d.vulnerabilities.length > 0
+          ? `[!] ${d.vulnerabilities.length}`
+          : 'None';
+        const deprecatedBadge = d.deprecated ? ' [DEPRECATED]' : '';
 
-        return `| [${escapeHtml(d.name)}](https://www.npmjs.com/package/${d.name}) | ${escapeHtml(d.version)} | ${escapeHtml(d.description)} | ${escapeHtml(licenseBadge)} | [${d.securityScore}](https://snyk.io/advisor/npm-package/${d.name}) | ${riskBadgeStr} | [${d.minifiedSize} KB](https://bundlephobia.com/package/${d.name}@${d.version}) | ${escapeHtml(d.lastPublishDate)} |`;
+        return `| [${escapeHtml(d.name)}](https://www.npmjs.com/package/${d.name})${deprecatedBadge} | ${escapeHtml(d.version)} | ${escapeHtml(d.description)} | ${escapeHtml(licenseBadge)} | [${d.securityScore}](https://snyk.io/advisor/npm-package/${d.name}) | ${vulnBadge} | ${riskBadgeStr} | [${d.minifiedSize} KB](https://bundlephobia.com/package/${d.name}@${d.version}) | ${escapeHtml(d.lastPublishDate)} |`;
       })
       .join('\n');
   };
 
   const formatInsights = () => {
     if (!insights) return '';
-    
+
     let insightsText = '';
 
+    // Vulnerability summary
+    if (insights.vulnerabilitySummary.total > 0) {
+      insightsText += `### Vulnerability Summary\n\n`;
+      insightsText += `| Severity | Count |\n`;
+      insightsText += `| -------- | ----- |\n`;
+      insightsText += `| Critical | ${insights.vulnerabilitySummary.critical} |\n`;
+      insightsText += `| High | ${insights.vulnerabilitySummary.high} |\n`;
+      insightsText += `| Moderate | ${insights.vulnerabilitySummary.moderate} |\n`;
+      insightsText += `| Low | ${insights.vulnerabilitySummary.low} |\n`;
+      insightsText += `\n**${insights.vulnerabilitySummary.packagesAffected}** packages affected out of ${insights.metrics.totalDependencies} total.\n\n`;
+    }
+
     if (insights.topRisks.length > 0) {
-      insightsText += `### 🚨 Top Security Risks\n\n`;
+      insightsText += `### Top Security Risks\n\n`;
       insightsText += `| Package | Risk Score | Factors |\n`;
       insightsText += `| ------- | --------- | ------- |\n`;
       insights.topRisks.forEach((risk: { name: string; score: number; factors: string[] }) => {
-        insightsText += `| ${escapeHtml(risk.name)} | ${risk.score}/100 | ${risk.factors.map((f: string) => escapeHtml(f)).join(' • ')} |\n`;
+        insightsText += `| ${escapeHtml(risk.name)} | ${risk.score}/100 | ${risk.factors.map((f: string) => escapeHtml(f)).join(' / ')} |\n`;
       });
       insightsText += `\n`;
     }
 
     if (insights.heaviestDependencies.length > 0) {
-      insightsText += `### 📦 Largest Dependencies\n\n`;
+      insightsText += `### Largest Dependencies\n\n`;
       insightsText += `| Package | Size | Gzipped |\n`;
       insightsText += `| ------- | ---- | ------- |\n`;
       insights.heaviestDependencies.forEach((dep: { name: string; size: number; gzipSize: number }) => {
         insightsText += `| ${escapeHtml(dep.name)} | ${dep.size} KB | ${dep.gzipSize} KB |\n`;
       });
-      insightsText += `\n**Total Bundle Size:** ${Math.round(insights.totalBundleSize / 1024)} MB\n\n`;
+      const totalMB = insights.totalBundleSize / 1024;
+      insightsText += `\n**Total Bundle Size:** ${totalMB >= 1 ? `${totalMB.toFixed(1)} MB` : `${insights.totalBundleSize} KB`}\n\n`;
     }
 
     if (insights.quickWins && insights.quickWins.length > 0) {
-      insightsText += `### ✅ Quick Wins (Easy Updates)\n\n`;
+      insightsText += `### Quick Wins (Easy Updates)\n\n`;
       insightsText += `These packages can be easily updated to improve security:\n\n`;
       insightsText += `| Package | Current | Latest | Security Score |\n`;
       insightsText += `| ------- | ------- | ------ | -------------- |\n`;
@@ -522,7 +753,7 @@ function generateMarkdown(result: SBOMResult): string {
     }
 
     if (insights.licenseIssues.length > 0) {
-      insightsText += `### ⚖️ License Concerns\n\n`;
+      insightsText += `### License Concerns\n\n`;
       insightsText += `The following packages use licenses that may require special attention:\n\n`;
       insights.licenseIssues.forEach((issue: { name: string; license: string }) => {
         insightsText += `- **${escapeHtml(issue.name)}**: ${escapeHtml(issue.license)}\n`;
@@ -530,8 +761,17 @@ function generateMarkdown(result: SBOMResult): string {
       insightsText += '\n';
     }
 
+    if (insights.deprecatedPackages.length > 0) {
+      insightsText += `### Deprecated Packages\n\n`;
+      insightsText += `The following packages are deprecated and should be replaced:\n\n`;
+      insights.deprecatedPackages.forEach((pkg) => {
+        insightsText += `- **${escapeHtml(pkg.name)}** (${escapeHtml(pkg.version)}): ${escapeHtml(pkg.reason)}\n`;
+      });
+      insightsText += '\n';
+    }
+
     if (insights.abandonedPackages.length > 0) {
-      insightsText += `### 🏚️ Potentially Abandoned Packages\n\n`;
+      insightsText += `### Potentially Abandoned Packages\n\n`;
       insightsText += `These packages haven't been updated in over 2 years:\n\n`;
       insights.abandonedPackages.forEach((pkg: { name: string; lastUpdate: string; daysSince: number }) => {
         insightsText += `- **${escapeHtml(pkg.name)}**: Last updated ${escapeHtml(pkg.lastUpdate)} (${pkg.daysSince} days ago)\n`;
@@ -544,32 +784,59 @@ function generateMarkdown(result: SBOMResult): string {
 
   let markdown = `# Software Bill of Materials (SBOM)\n\n`;
   markdown += `Last updated: ${new Date().toLocaleString()}\n\n`;
-  markdown += `${isMonorepo ? '📦 **Monorepo Project**' : '📦 **Single Package Project**'}\n\n`;
-  markdown += `> 🤖 This documentation is auto-generated by [Bill of Material](https://billofmaterial.dev)\n\n`;
+  markdown += `${isMonorepo ? '**Monorepo Project**' : '**Single Package Project**'}\n\n`;
+  markdown += `> This documentation is auto-generated by [Bill of Material](https://billofmaterial.dev)\n\n`;
+
+  // Coverage declaration
+  if (result.coverage) {
+    markdown += `> **SBOM Coverage:** ${result.coverage.depth} dependencies | Tool: ${result.coverage.toolName} v${result.coverage.toolVersion}\n\n`;
+  }
 
   if (insights) {
-    markdown += `## 📊 Executive Summary\n\n`;
+    markdown += `## Executive Summary\n\n`;
     markdown += `- **Total Dependencies:** ${insights.metrics.totalDependencies} (${insights.metrics.productionDependencies} production, ${insights.metrics.devDependencies} dev)\n`;
     markdown += `- **Average Security Score:** ${insights.metrics.averageSecurityScore}/100\n`;
-    markdown += `- **Total Bundle Size:** ${Math.round(insights.totalBundleSize / 1024)} MB\n`;
+    const totalMB = insights.totalBundleSize / 1024;
+    markdown += `- **Total Bundle Size:** ${totalMB >= 1 ? `${totalMB.toFixed(1)} MB` : `${insights.totalBundleSize} KB`}\n`;
     markdown += `- **High Risk Packages:** ${insights.topRisks.length}\n`;
     markdown += `- **License Issues:** ${insights.licenseIssues.length}\n`;
+    if (insights.vulnerabilitySummary.total > 0) {
+      const vs = insights.vulnerabilitySummary;
+      markdown += `- **Vulnerabilities:** ${vs.total} total (${vs.critical} critical, ${vs.high} high, ${vs.moderate} moderate, ${vs.low} low) in ${vs.packagesAffected} packages\n`;
+    } else {
+      markdown += `- **Vulnerabilities:** None detected\n`;
+    }
+    if (insights.deprecatedPackages.length > 0) {
+      markdown += `- **Deprecated Packages:** ${insights.deprecatedPackages.length}\n`;
+    }
     if (insights.metrics.vulnerabilities) {
       const vulns = insights.metrics.vulnerabilities;
       const totalVulns = vulns.info + vulns.low + vulns.moderate + vulns.high + vulns.critical;
-      markdown += `- **Vulnerabilities:** ${totalVulns} total (${vulns.critical} critical, ${vulns.high} high, ${vulns.moderate} moderate)\n`;
+      markdown += `- **Audit Vulnerabilities:** ${totalVulns} total (${vulns.critical} critical, ${vulns.high} high, ${vulns.moderate} moderate)\n`;
     }
     markdown += `\n`;
-    
-    markdown += `## 🎯 Key Insights & Actions\n\n`;
+
+    markdown += `## Key Insights & Actions\n\n`;
     markdown += formatInsights();
+  }
+
+  // Known Unknowns section
+  if (result.knownUnknowns && result.knownUnknowns.length > 0) {
+    markdown += `\n## Known Unknowns\n\n`;
+    markdown += `The following components could not be fully analyzed:\n\n`;
+    markdown += `| Package | Version | Reason | Category |\n`;
+    markdown += `| ------- | ------- | ------ | -------- |\n`;
+    result.knownUnknowns.forEach((ku) => {
+      markdown += `| ${escapeHtml(ku.name)} | ${escapeHtml(ku.version)} | ${escapeHtml(ku.reason)} | ${ku.category} |\n`;
+    });
+    markdown += `\n`;
   }
 
   // Security Audit Section
   if (result.auditData && result.auditData.advisories) {
     const advisoriesCount = Object.keys(result.auditData.advisories).length;
     if (advisoriesCount > 0) {
-      markdown += `\n## 🔒 Security Audit\n\n`;
+      markdown += `\n## Security Audit\n\n`;
       markdown += `### Summary\n\n`;
       markdown += `| Severity  | Count |\n`;
       markdown += `| --------- | ----- |\n`;
@@ -582,7 +849,7 @@ function generateMarkdown(result: SBOMResult): string {
         markdown += `| Critical  | ${vuln.critical || 0} |\n`;
       }
       markdown += `\n### Vulnerabilities\n\n`;
-      
+
       const advisories = Object.values(result.auditData.advisories).slice(0, 10);
       advisories.forEach((adv: any) => {
         markdown += `#### ${adv.module_name}\n\n`;
@@ -600,7 +867,7 @@ function generateMarkdown(result: SBOMResult): string {
 
   // Outdated Packages Section
   if (result.outdatedPackages && Object.keys(result.outdatedPackages).length > 0) {
-    markdown += `\n## 📅 Outdated Packages\n\n`;
+    markdown += `\n## Outdated Packages\n\n`;
     markdown += `The following packages have newer versions available:\n\n`;
     markdown += `| Package | Current | Wanted | Latest |\n`;
     markdown += `| ------- | ------- | ------ | ------ |\n`;
@@ -617,22 +884,38 @@ function generateMarkdown(result: SBOMResult): string {
     }
 
     markdown += `### Production Dependencies\n\n`;
-    markdown += `| Name | Version | Description | License | Security | Risk | Size | Last Update |\n`;
-    markdown += `| ---- | ------- | ----------- | ------- | -------- | ---- | ---- | ----------- |\n`;
+    markdown += `| Name | Version | Description | License | Security | CVEs | Risk | Size | Last Update |\n`;
+    markdown += `| ---- | ------- | ----------- | ------- | -------- | ---- | ---- | ---- | ----------- |\n`;
     markdown += formatDependencyTable(pkg.dependencies);
     markdown += `\n\n`;
 
     if (pkg.devDependencies.length > 0) {
       markdown += `### Development Dependencies\n\n`;
-      markdown += `| Name | Version | Description | License | Security | Risk | Size | Last Update |\n`;
-      markdown += `| ---- | ------- | ----------- | ------- | -------- | ---- | ---- | ----------- |\n`;
+      markdown += `| Name | Version | Description | License | Security | CVEs | Risk | Size | Last Update |\n`;
+      markdown += `| ---- | ------- | ----------- | ------- | -------- | ---- | ---- | ---- | ----------- |\n`;
       markdown += formatDependencyTable(pkg.devDependencies);
       markdown += `\n\n`;
     }
   }
 
+  // Compliance Report
+  if (result.complianceReport) {
+    markdown += `\n## ISO 27001 Compliance Report\n\n`;
+    markdown += `**Standard:** ${result.complianceReport.standard}\n`;
+    markdown += `**Status:** ${result.complianceReport.overallStatus.replace('_', ' ').toUpperCase()}\n`;
+    markdown += `**Assessment:** ${result.complianceReport.summary.passed} passed, ${result.complianceReport.summary.warnings} warnings, ${result.complianceReport.summary.failed} failed\n\n`;
+
+    markdown += `| Control | Status | Description | Findings |\n`;
+    markdown += `| ------- | ------ | ----------- | -------- |\n`;
+    result.complianceReport.controls.forEach((ctrl) => {
+      const statusIcon = ctrl.status === 'pass' ? 'PASS' : ctrl.status === 'warning' ? 'WARN' : 'FAIL';
+      markdown += `| ${ctrl.id} | ${statusIcon} ${ctrl.status.toUpperCase()} | ${escapeHtml(ctrl.name)} | ${ctrl.findings.map(f => escapeHtml(f)).join('; ')} |\n`;
+    });
+    markdown += `\n`;
+  }
+
   markdown += `\n---\n\n`;
-  markdown += `*Generated by [Bill of Material](https://billofmaterial.dev)*\n`;
+  markdown += `*Generated by [Bill of Material](https://billofmaterial.dev) v${TOOL_VERSION}*\n`;
 
   return markdown;
 }
@@ -641,8 +924,7 @@ function generateSPDX(result: SBOMResult, rootPackageJson: PackageJson): SPDXDoc
   const timestamp = new Date().toISOString();
   const projectName = rootPackageJson.name || 'project';
   const projectVersion = rootPackageJson.version || '1.0.0';
-  
-  // Helper to create SPDX ID from package name
+
   const toSPDXID = (name: string) => {
     return `SPDXRef-Package-${name.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
   };
@@ -650,7 +932,6 @@ function generateSPDX(result: SBOMResult, rootPackageJson: PackageJson): SPDXDoc
   const spdxPackages: SPDXPackage[] = [];
   const relationships: SPDXRelationship[] = [];
 
-  // Root package
   const rootSPDXID = 'SPDXRef-Package-Root';
   spdxPackages.push({
     SPDXID: rootSPDXID,
@@ -666,29 +947,47 @@ function generateSPDX(result: SBOMResult, rootPackageJson: PackageJson): SPDXDoc
     description: rootPackageJson.description || '',
   });
 
-  // Add all dependencies as SPDX packages
   for (const pkg of result.packages) {
     const allDeps = [...pkg.dependencies, ...pkg.devDependencies];
-    
+
     for (const dep of allDeps) {
       const spdxId = toSPDXID(dep.name);
-      
-      // Avoid duplicates
+
       if (spdxPackages.some(p => p.SPDXID === spdxId)) {
         continue;
       }
 
-      // For scoped packages like @scope/pkg, the tgz filename is just "pkg-version.tgz"
       const tgzName = dep.name.startsWith('@') ? dep.name.split('/')[1] : dep.name;
       const downloadUrl = `https://registry.npmjs.org/${dep.name}/-/${tgzName}-${dep.version}.tgz`;
-      
+
+      // P0: Add checksums from npm registry
+      const checksums: Array<{ algorithm: string; checksumValue: string }> = [];
+      if (dep.integrity) {
+        // Parse integrity hash (format: "sha512-base64...")
+        const match = dep.integrity.match(/^(sha\d+)-(.+)$/);
+        if (match) {
+          const algo = match[1]!.toUpperCase().replace('SHA', 'SHA');
+          const hashBase64 = match[2]!;
+          const hashHex = Buffer.from(hashBase64, 'base64').toString('hex');
+          checksums.push({ algorithm: algo, checksumValue: hashHex });
+        }
+      }
+      if (dep.shasum) {
+        checksums.push({ algorithm: 'SHA1', checksumValue: dep.shasum });
+      }
+
+      // P0: Supplier info
+      const supplierStr = dep.supplier
+        ? `Organization: ${dep.supplier.name}${dep.supplier.email ? ` (${dep.supplier.email})` : ''}`
+        : 'NOASSERTION';
+
       spdxPackages.push({
         SPDXID: spdxId,
         name: dep.name,
         versionInfo: dep.version,
         downloadLocation: downloadUrl,
         filesAnalyzed: false,
-        supplier: 'NOASSERTION',
+        supplier: supplierStr,
         homepage: dep.homepage || 'NOASSERTION',
         licenseConcluded: dep.license || 'NOASSERTION',
         licenseDeclared: dep.license || 'NOASSERTION',
@@ -701,9 +1000,9 @@ function generateSPDX(result: SBOMResult, rootPackageJson: PackageJson): SPDXDoc
             referenceLocator: `pkg:npm/${dep.name}@${dep.version}`,
           },
         ],
+        checksums: checksums.length > 0 ? checksums : undefined,
       });
 
-      // Create relationship: root DEPENDS_ON dependency
       relationships.push({
         spdxElementId: rootSPDXID,
         relationshipType: 'DEPENDS_ON',
@@ -721,7 +1020,7 @@ function generateSPDX(result: SBOMResult, rootPackageJson: PackageJson): SPDXDoc
     creationInfo: {
       created: timestamp,
       creators: [
-        'Tool: billofmaterial',
+        `Tool: billofmaterial-${TOOL_VERSION}`,
         'Organization: Bill of Material (https://billofmaterial.dev)',
       ],
       licenseListVersion: '3.21',
@@ -738,6 +1037,339 @@ function generateSPDX(result: SBOMResult, rootPackageJson: PackageJson): SPDXDoc
   };
 
   return spdxDoc;
+}
+
+// P1: Generate CycloneDX 1.5 format (ECMA-424)
+function generateCycloneDX(result: SBOMResult, rootPackageJson: PackageJson): CycloneDXDocument {
+  const timestamp = new Date().toISOString();
+  const projectName = rootPackageJson.name || 'project';
+  const projectVersion = rootPackageJson.version || '1.0.0';
+
+  const components: CycloneDXComponent[] = [];
+  const dependencies: CycloneDXDependency[] = [];
+  const vulnerabilities: CycloneDXVulnerability[] = [];
+
+  const rootRef = `pkg:npm/${projectName}@${projectVersion}`;
+  const rootDependsOn: string[] = [];
+
+  for (const pkg of result.packages) {
+    const allDeps = [...pkg.dependencies, ...pkg.devDependencies];
+
+    for (const dep of allDeps) {
+      const bomRef = `pkg:npm/${dep.name}@${dep.version}`;
+
+      if (components.some(c => c['bom-ref'] === bomRef)) continue;
+
+      rootDependsOn.push(bomRef);
+
+      // Hashes
+      const hashes: Array<{ alg: string; content: string }> = [];
+      if (dep.integrity) {
+        const match = dep.integrity.match(/^(sha\d+)-(.+)$/);
+        if (match) {
+          const alg = match[1]!.toUpperCase().replace('SHA', 'SHA-');
+          hashes.push({ alg, content: Buffer.from(match[2]!, 'base64').toString('hex') });
+        }
+      }
+      if (dep.shasum) {
+        hashes.push({ alg: 'SHA-1', content: dep.shasum });
+      }
+
+      const component: CycloneDXComponent = {
+        type: 'library',
+        name: dep.name,
+        version: dep.version,
+        'bom-ref': bomRef,
+        purl: bomRef,
+        description: dep.description !== 'N/A' ? dep.description : undefined,
+        licenses: dep.license && dep.license !== 'Unknown'
+          ? [{ license: { id: dep.license } }]
+          : undefined,
+        hashes: hashes.length > 0 ? hashes : undefined,
+        supplier: dep.supplier ? {
+          name: dep.supplier.name,
+          url: dep.supplier.url ? [dep.supplier.url] : undefined,
+        } : undefined,
+        externalReferences: dep.homepage ? [{
+          type: 'website',
+          url: dep.homepage,
+        }] : undefined,
+        properties: [
+          ...(dep.deprecated ? [{ name: 'cdx:npm:deprecated', value: typeof dep.deprecated === 'string' ? dep.deprecated : 'true' }] : []),
+          { name: 'cdx:npm:weekly-downloads', value: String(dep.weeklyDownloads) },
+        ],
+      };
+      components.push(component);
+
+      // Dependency graph
+      const depDependsOn = dep.transitiveDependencies?.map(t => `pkg:npm/${t}`) || [];
+      dependencies.push({ ref: bomRef, dependsOn: depDependsOn.length > 0 ? depDependsOn : undefined });
+
+      // Vulnerabilities
+      if (dep.vulnerabilities) {
+        for (const vuln of dep.vulnerabilities) {
+          if (vulnerabilities.some(v => v.id === vuln.id)) continue;
+
+          const cdxVuln: CycloneDXVulnerability = {
+            id: vuln.id,
+            source: {
+              name: 'OSV',
+              url: 'https://osv.dev',
+            },
+            ratings: vuln.cvssScore !== undefined ? [{
+              score: vuln.cvssScore,
+              severity: vuln.severity.toLowerCase(),
+              method: 'CVSSv3',
+            }] : [{
+              severity: vuln.severity.toLowerCase(),
+            }],
+            cwes: vuln.cweIds?.map(c => parseInt(c.replace('CWE-', ''), 10)).filter(n => !isNaN(n)),
+            description: vuln.summary,
+            recommendation: vuln.fixedIn ? `Update to version ${vuln.fixedIn} or later` : undefined,
+            advisories: vuln.url ? [{ url: vuln.url }] : undefined,
+            affects: [{
+              ref: bomRef,
+              versions: [{
+                version: dep.version,
+                status: 'affected',
+              }],
+            }],
+            analysis: vuln.vexStatus ? {
+              state: vuln.vexStatus,
+              justification: vuln.vexJustification,
+            } : undefined,
+          };
+          vulnerabilities.push(cdxVuln);
+        }
+      }
+    }
+  }
+
+  // Root dependency entry
+  dependencies.unshift({ ref: rootRef, dependsOn: rootDependsOn });
+
+  return {
+    bomFormat: 'CycloneDX',
+    specVersion: '1.5',
+    serialNumber: `urn:uuid:${crypto.randomUUID()}`,
+    version: 1,
+    metadata: {
+      timestamp,
+      tools: [{
+        vendor: 'billofmaterial',
+        name: 'billofmaterial',
+        version: TOOL_VERSION,
+      }],
+      component: {
+        type: 'application',
+        name: projectName,
+        version: projectVersion,
+        'bom-ref': rootRef,
+      },
+      lifecycles: [{ phase: 'build' }],
+    },
+    components,
+    dependencies,
+    vulnerabilities: vulnerabilities.length > 0 ? vulnerabilities : undefined,
+  };
+}
+
+// P3: Generate ISO 27001 Compliance Report
+function generateComplianceReport(result: SBOMResult): ComplianceReport {
+  const controls: ComplianceControl[] = [];
+  const allDeps: DependencyInfo[] = [];
+  for (const pkg of result.packages) {
+    allDeps.push(...pkg.dependencies, ...pkg.devDependencies);
+  }
+
+  const insights = result.insights!;
+  const vulnSummary = insights.vulnerabilitySummary;
+
+  // A.8.28 - Secure Coding (Software Component Management)
+  {
+    const findings: string[] = [];
+    let status: 'pass' | 'warning' | 'fail' = 'pass';
+
+    if (allDeps.length === 0) {
+      findings.push('No dependencies analyzed');
+      status = 'warning';
+    } else {
+      findings.push(`${allDeps.length} components inventoried with version, license, and supplier data`);
+    }
+
+    const withHashes = allDeps.filter(d => d.integrity || d.shasum).length;
+    if (withHashes < allDeps.length) {
+      findings.push(`${allDeps.length - withHashes} components missing cryptographic hashes`);
+      if (withHashes < allDeps.length * 0.5) status = 'fail';
+      else status = 'warning';
+    } else {
+      findings.push('All components have cryptographic hashes');
+    }
+
+    controls.push({
+      id: 'A.8.28',
+      name: 'Secure Coding - Component Inventory',
+      status,
+      description: 'Software components must be inventoried and managed with integrity verification',
+      findings,
+      recommendation: status !== 'pass' ? 'Ensure all components have verifiable integrity hashes' : undefined,
+    });
+  }
+
+  // A.8.28 - Vulnerability Management
+  {
+    const findings: string[] = [];
+    let status: 'pass' | 'warning' | 'fail' = 'pass';
+
+    if (vulnSummary.critical > 0) {
+      findings.push(`${vulnSummary.critical} CRITICAL vulnerabilities detected - immediate action required`);
+      status = 'fail';
+    }
+    if (vulnSummary.high > 0) {
+      findings.push(`${vulnSummary.high} HIGH severity vulnerabilities detected`);
+      if (status === 'pass') status = 'warning';
+    }
+    if (vulnSummary.total === 0) {
+      findings.push('No known vulnerabilities detected');
+    } else {
+      findings.push(`${vulnSummary.total} total vulnerabilities in ${vulnSummary.packagesAffected} packages`);
+    }
+
+    controls.push({
+      id: 'A.8.28-VULN',
+      name: 'Secure Coding - Vulnerability Management',
+      status,
+      description: 'Known vulnerabilities in third-party components must be identified and addressed',
+      findings,
+      recommendation: status !== 'pass' ? 'Remediate critical and high vulnerabilities immediately. Review moderate vulnerabilities within 30 days.' : undefined,
+    });
+  }
+
+  // A.5.19 - Supplier Relationships (Information Security)
+  {
+    const findings: string[] = [];
+    let status: 'pass' | 'warning' | 'fail' = 'pass';
+
+    const withSupplier = allDeps.filter(d => d.supplier).length;
+    findings.push(`${withSupplier}/${allDeps.length} components have identified suppliers`);
+
+    if (withSupplier < allDeps.length * 0.8) {
+      status = 'warning';
+    }
+
+    const deprecated = insights.deprecatedPackages.length;
+    if (deprecated > 0) {
+      findings.push(`${deprecated} deprecated packages in use - supplier support ended`);
+      status = 'warning';
+    }
+
+    const abandoned = insights.abandonedPackages.length;
+    if (abandoned > 0) {
+      findings.push(`${abandoned} potentially abandoned packages (no update >2 years)`);
+      status = 'warning';
+    }
+
+    controls.push({
+      id: 'A.5.19',
+      name: 'Information Security in Supplier Relationships',
+      status,
+      description: 'Processes for managing information security risks in supplier relationships',
+      findings,
+      recommendation: status !== 'pass' ? 'Replace deprecated packages. Evaluate alternatives for abandoned packages. Document risk acceptance for unresolved items.' : undefined,
+    });
+  }
+
+  // A.5.20 - Addressing Information Security within Supplier Agreements
+  {
+    const findings: string[] = [];
+    let status: 'pass' | 'warning' | 'fail' = 'pass';
+
+    const licenseIssues = insights.licenseIssues.length;
+    if (licenseIssues > 0) {
+      findings.push(`${licenseIssues} packages with restrictive licenses (GPL/AGPL/LGPL/CC-BY-NC)`);
+      status = 'warning';
+    } else {
+      findings.push('No restrictive license issues detected');
+    }
+
+    const unknownLicense = allDeps.filter(d => d.license === 'Unknown').length;
+    if (unknownLicense > 0) {
+      findings.push(`${unknownLicense} packages with unknown licenses`);
+      status = 'warning';
+    }
+
+    controls.push({
+      id: 'A.5.20',
+      name: 'Addressing Information Security within Supplier Agreements',
+      status,
+      description: 'License compliance and intellectual property management of third-party components',
+      findings,
+      recommendation: status !== 'pass' ? 'Review restrictive licenses for compliance. Identify licenses for unknown packages.' : undefined,
+    });
+  }
+
+  // SBOM Completeness
+  {
+    const findings: string[] = [];
+    let status: 'pass' | 'warning' | 'fail' = 'pass';
+
+    const knownUnknowns = result.knownUnknowns || [];
+    if (knownUnknowns.length > 0) {
+      findings.push(`${knownUnknowns.length} components could not be fully analyzed`);
+      status = 'warning';
+    } else {
+      findings.push('All components successfully analyzed');
+    }
+
+    const coverage = result.coverage;
+    if (coverage) {
+      findings.push(`Coverage depth: ${coverage.depth}`);
+      if (coverage.depth === 'top-level') {
+        findings.push('Only direct dependencies analyzed - transitive dependencies not included');
+        status = 'warning';
+      }
+    }
+
+    controls.push({
+      id: 'SBOM-COMPLETE',
+      name: 'SBOM Completeness & Coverage',
+      status,
+      description: 'SBOM must provide comprehensive coverage of all software components (CISA 2025)',
+      findings,
+      recommendation: status !== 'pass' ? 'Enable transitive dependency analysis for full coverage. Investigate fetch failures.' : undefined,
+    });
+  }
+
+  const summary = {
+    totalControls: controls.length,
+    passed: controls.filter(c => c.status === 'pass').length,
+    warnings: controls.filter(c => c.status === 'warning').length,
+    failed: controls.filter(c => c.status === 'fail').length,
+  };
+
+  const overallStatus = summary.failed > 0
+    ? 'non_compliant' as const
+    : summary.warnings > 0
+      ? 'partially_compliant' as const
+      : 'compliant' as const;
+
+  return {
+    standard: 'ISO/IEC 27001:2022',
+    generatedAt: new Date().toISOString(),
+    overallStatus,
+    controls,
+    summary,
+  };
+}
+
+// P2: Generate SBOM integrity hash
+function generateIntegrityHash(result: SBOMResult): string {
+  const content = JSON.stringify({
+    packages: result.packages,
+    generatedAt: result.generatedAt,
+    totalDependencies: result.totalDependencies,
+  });
+  return `sha256:${createHash('sha256').update(content).digest('hex')}`;
 }
 
 export async function generateSBOM(
@@ -770,22 +1402,17 @@ export async function generateSBOM(
 
   onProgress?.('Detecting project structure...');
 
-  // Detect if monorepo
   const isMonorepo = detectMonorepo(rootPackageJson, workspaceYaml);
-
   const packages: PackageData[] = [];
-
   const allOutdatedPackages: Record<string, any> = {};
+  const knownUnknowns: KnownUnknown[] = [];
 
   if (isMonorepo) {
     onProgress?.('Analyzing monorepo structure...');
-    
-    // Find all package.json files in workspace
+
     const packageJsonFiles = findAllPackageJsons(files, rootPackageJson, workspaceYaml);
-    
     onProgress?.(`Found ${packageJsonFiles.length} packages in monorepo`);
 
-    // Analyze each package
     for (let i = 0; i < packageJsonFiles.length; i++) {
       const pkgFile = packageJsonFiles[i];
       if (!pkgFile || !pkgFile.content) {
@@ -800,6 +1427,7 @@ export async function generateSBOM(
       const depsResult = await analyzeDependencies(
         pkgJson.dependencies || {},
         config,
+        knownUnknowns,
         (current, total) => {
           onProgress?.(
             `Analyzing dependencies for ${pkgJson.name || pkgFile.path}`,
@@ -813,6 +1441,7 @@ export async function generateSBOM(
         ? await analyzeDependencies(
             pkgJson.devDependencies || {},
             config,
+            knownUnknowns,
             (current, total) => {
               onProgress?.(
                 `Analyzing dev dependencies for ${pkgJson.name || pkgFile.path}`,
@@ -823,7 +1452,6 @@ export async function generateSBOM(
           )
         : { dependencies: [], outdatedPackages: {} };
 
-      // Merge outdated packages
       Object.assign(allOutdatedPackages, depsResult.outdatedPackages, devDepsResult.outdatedPackages);
 
       packages.push({
@@ -839,6 +1467,7 @@ export async function generateSBOM(
     const depsResult = await analyzeDependencies(
       rootPackageJson.dependencies || {},
       config,
+      knownUnknowns,
       (current, total) => {
         onProgress?.('Analyzing production dependencies', current, total);
       }
@@ -848,13 +1477,13 @@ export async function generateSBOM(
       ? await analyzeDependencies(
           rootPackageJson.devDependencies || {},
           config,
+          knownUnknowns,
           (current, total) => {
             onProgress?.('Analyzing development dependencies', current, total);
           }
         )
       : { dependencies: [], outdatedPackages: {} };
 
-    // Merge outdated packages
     Object.assign(allOutdatedPackages, depsResult.outdatedPackages, devDepsResult.outdatedPackages);
 
     packages.push({
@@ -864,13 +1493,22 @@ export async function generateSBOM(
     });
   }
 
+  // P0: Coverage declaration
+  const coverage: SBOMCoverage = {
+    depth: config.includeTransitiveDeps ? 'transitive' : 'top-level',
+    analysisTimestamp: new Date().toISOString(),
+    toolName: 'billofmaterial',
+    toolVersion: TOOL_VERSION,
+    coverageNote: config.includeTransitiveDeps
+      ? 'Includes direct and first-level transitive dependencies'
+      : 'Top-level dependencies only. Enable includeTransitiveDeps for deeper analysis.',
+  };
+
   onProgress?.('Generating insights...');
-  
-  // Generate insights with outdated packages
   const insights = generateInsights(packages, allOutdatedPackages, undefined);
 
-  onProgress?.('Generating markdown...');
-  
+  onProgress?.('Generating reports...');
+
   const result: SBOMResult = {
     isMonorepo,
     packages,
@@ -881,20 +1519,32 @@ export async function generateSBOM(
     markdown: '',
     generatedAt: new Date().toISOString(),
     insights,
-    // Outdated packages are now detected from npm
     outdatedPackages: Object.keys(allOutdatedPackages).length > 0 ? allOutdatedPackages : undefined,
-    // Audit data still requires CLI
     auditData: undefined,
+    coverage,
+    knownUnknowns: knownUnknowns.length > 0 ? knownUnknowns : undefined,
   };
 
+  // P3: Compliance report
+  onProgress?.('Generating ISO 27001 compliance report...');
+  result.complianceReport = generateComplianceReport(result);
+
+  // Generate markdown
   result.markdown = generateMarkdown(result);
-  
-  // Generate SPDX format (ISO/IEC 5962:2021)
+
+  // SPDX format (ISO/IEC 5962:2021)
   onProgress?.('Generating SPDX format...');
   result.spdx = generateSPDX(result, rootPackageJson);
 
+  // CycloneDX format (ECMA-424)
+  onProgress?.('Generating CycloneDX format...');
+  result.cyclonedx = generateCycloneDX(result, rootPackageJson);
+
+  // P2: SBOM integrity hash
+  result.integrityHash = generateIntegrityHash(result);
+
   const duration = Math.round((Date.now() - startTime) / 1000);
-  onProgress?.(`✅ Completed in ${duration}s`);
+  onProgress?.(`Completed in ${duration}s`);
 
   return result;
 }
@@ -907,21 +1557,21 @@ export async function generateSBOMWithExtras(
   onProgress?: (message: string, current?: number, total?: number) => void
 ): Promise<SBOMResult> {
   const result = await generateSBOM(options, onProgress);
-  
+
   if (auditData) {
     result.auditData = auditData;
   }
-  
+
   if (outdatedPackages) {
     result.outdatedPackages = outdatedPackages;
   }
-  
+
   // Regenerate insights with audit and outdated data
   if (auditData || outdatedPackages) {
     result.insights = generateInsights(result.packages, outdatedPackages, auditData);
+    result.complianceReport = generateComplianceReport(result);
     result.markdown = generateMarkdown(result);
   }
-  
+
   return result;
 }
-

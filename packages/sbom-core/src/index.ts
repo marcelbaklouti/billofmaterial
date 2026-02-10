@@ -10,6 +10,16 @@ export type {
   Advisory,
   OutdatedPackage,
   DependencyTree,
-  SBOMInsights
+  SBOMInsights,
+  SupplierInfo,
+  VulnerabilityInfo,
+  VulnSeverity,
+  VEXStatus,
+  KnownUnknown,
+  SBOMCoverage,
+  ComplianceReport,
+  ComplianceControl,
+  CycloneDXDocument,
+  CycloneDXComponent,
+  CycloneDXVulnerability,
 } from './types';
-

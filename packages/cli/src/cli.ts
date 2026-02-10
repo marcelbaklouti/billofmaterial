@@ -12,7 +12,7 @@ const program = new Command();
 program
   .name('billofmaterial')
   .description('Generate comprehensive Software Bill of Materials (SBOM) for your projects')
-  .version('0.2.1');
+  .version('0.3.0');
 
 program
   .command('generate')
@@ -116,35 +116,73 @@ program
       // Write markdown file
       const outputPath = join(projectPath, options.output);
       writeFileSync(outputPath, result.markdown, 'utf-8');
-      console.log(chalk.green(`\n✅ SBOM written to: ${outputPath}`));
+      console.log(chalk.green(`\nSBOM written to: ${outputPath}`));
 
-      // Write JSON file if requested
+      // Write SPDX JSON
+      if (result.spdx) {
+        const spdxPath = outputPath.replace(/\.md$/, '-spdx.json');
+        writeFileSync(spdxPath, JSON.stringify(result.spdx, null, 2), 'utf-8');
+        console.log(chalk.green(`SPDX 2.3 written to: ${spdxPath}`));
+      }
+
+      // Write CycloneDX JSON
+      if (result.cyclonedx) {
+        const cdxPath = outputPath.replace(/\.md$/, '-cyclonedx.json');
+        writeFileSync(cdxPath, JSON.stringify(result.cyclonedx, null, 2), 'utf-8');
+        console.log(chalk.green(`CycloneDX 1.5 written to: ${cdxPath}`));
+      }
+
+      // Write full JSON if requested
       if (options.json) {
         const jsonPath = outputPath.replace(/\.md$/, '.json');
         writeFileSync(jsonPath, JSON.stringify(result, null, 2), 'utf-8');
-        console.log(chalk.green(`✅ JSON data written to: ${jsonPath}`));
+        console.log(chalk.green(`JSON data written to: ${jsonPath}`));
       }
 
       // Display summary
-      console.log(chalk.cyan('\n📊 Summary:'));
+      console.log(chalk.cyan('\nSummary:'));
       console.log(`   Total Dependencies: ${result.totalDependencies}`);
       if (result.insights) {
         console.log(`   Average Security Score: ${result.insights.metrics.averageSecurityScore}/100`);
         console.log(`   High Risk Packages: ${result.insights.topRisks.length}`);
-        console.log(`   Total Bundle Size: ${Math.round(result.insights.totalBundleSize / 1024)} MB`);
-        
+        const totalMB = result.insights.totalBundleSize / 1024;
+        console.log(`   Total Bundle Size: ${totalMB >= 1 ? `${totalMB.toFixed(1)} MB` : `${result.insights.totalBundleSize} KB`}`);
+
+        if (result.insights.vulnerabilitySummary && result.insights.vulnerabilitySummary.total > 0) {
+          const vs = result.insights.vulnerabilitySummary;
+          console.log(chalk.red(`   Vulnerabilities: ${vs.total} total (${vs.critical} critical, ${vs.high} high)`));
+        } else {
+          console.log(chalk.green('   Vulnerabilities: None detected'));
+        }
+
+        if (result.insights.deprecatedPackages && result.insights.deprecatedPackages.length > 0) {
+          console.log(chalk.yellow(`   Deprecated Packages: ${result.insights.deprecatedPackages.length}`));
+        }
+
         if (result.insights.topRisks.length > 0) {
-          console.log(chalk.yellow('\n⚠️  Top Security Risks:'));
+          console.log(chalk.yellow('\n   Top Security Risks:'));
           result.insights.topRisks.slice(0, 3).forEach((risk: { name: string; score: number }) => {
-            console.log(chalk.yellow(`   • ${risk.name} (${risk.score}/100)`));
+            console.log(chalk.yellow(`   - ${risk.name} (${risk.score}/100)`));
           });
         }
       }
 
-      console.log(chalk.dim('\n💡 Tip: Use --json flag to also generate a JSON file with detailed data\n'));
+      // Compliance summary
+      if (result.complianceReport) {
+        const cr = result.complianceReport;
+        const statusColor = cr.overallStatus === 'compliant' ? chalk.green : cr.overallStatus === 'partial' ? chalk.yellow : chalk.red;
+        console.log(statusColor(`\n   ISO 27001 Compliance: ${cr.overallStatus.toUpperCase()}`));
+        console.log(`   Controls: ${cr.summary.passed} passed, ${cr.summary.warnings} warnings, ${cr.summary.failed} failed`);
+      }
+
+      if (result.integrityHash) {
+        console.log(chalk.dim(`\n   SBOM Integrity: ${result.integrityHash}`));
+      }
+
+      console.log(chalk.dim('\nTip: Use --json flag to also generate a JSON file with detailed data\n'));
     } catch (error) {
       spinner.fail('Failed to generate SBOM');
-      console.error(chalk.red('\n❌ Error:'), error instanceof Error ? error.message : error);
+      console.error(chalk.red('\nError:'), error instanceof Error ? error.message : error);
       process.exit(1);
     }
   });
@@ -153,7 +191,7 @@ program
   .command('version')
   .description('Display version information')
   .action(() => {
-    console.log(chalk.cyan('billofmaterial v0.2.1'));
+    console.log(chalk.cyan('billofmaterial v0.3.0'));
     console.log(chalk.dim('Generate comprehensive SBOM for your projects'));
   });
 
