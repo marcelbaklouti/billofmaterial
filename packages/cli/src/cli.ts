@@ -170,7 +170,7 @@ program
       // Compliance summary
       if (result.complianceReport) {
         const cr = result.complianceReport;
-        const statusColor = cr.overallStatus === 'compliant' ? chalk.green : cr.overallStatus === 'partial' ? chalk.yellow : chalk.red;
+        const statusColor = cr.overallStatus === 'compliant' ? chalk.green : cr.overallStatus === 'partially_compliant' ? chalk.yellow : chalk.red;
         console.log(statusColor(`\n   ISO 27001 Compliance: ${cr.overallStatus.toUpperCase()}`));
         console.log(`   Controls: ${cr.summary.passed} passed, ${cr.summary.warnings} warnings, ${cr.summary.failed} failed`);
       }

@@ -79,8 +79,8 @@ importers:
   packages/cli:
     dependencies:
       '@billofmaterial/sbom-core':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: workspace:*
+        version: link:../sbom-core
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -251,9 +251,6 @@ packages:
   '@babel/runtime-corejs3@7.28.2':
     resolution: {integrity: sha512-FVFaVs2/dZgD3Y9ZD+AKNKjyGKzwu0C54laAXWUXgLcVXcCX6YZ6GhK2cp7FogSN2OA0Fu+QT8dP3FUdo9ShSQ==}
     engines: {node: '>=6.9.0'}
-
-  '@billofmaterial/sbom-core@0.1.0':
-    resolution: {integrity: sha512-S0u+d+zWFUNkcM2HkurzzawmdBllxg+ZhMPYX7d+BCszInmSlTAnRorH9knhvGPSIJdtW5fz5HbkR5mfZmrjYw==}
 
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
@@ -3323,11 +3320,6 @@ snapshots:
   '@babel/runtime-corejs3@7.28.2':
     dependencies:
       core-js-pure: 3.45.0
-
-  '@billofmaterial/sbom-core@0.1.0':
-    dependencies:
-      cheerio: 1.1.2
-      yaml: 2.8.1
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:

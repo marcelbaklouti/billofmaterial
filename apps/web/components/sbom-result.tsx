@@ -391,8 +391,8 @@ export function SBOMResult({ result }: SBOMResultProps) {
             ISO 27001 Compliance Report
           </h3>
           <div className="flex items-center gap-4 mb-4">
-            <Badge variant={result.complianceReport.overallStatus === 'compliant' ? 'default' : result.complianceReport.overallStatus === 'partial' ? 'secondary' : 'destructive'}>
-              {result.complianceReport.overallStatus === 'compliant' ? 'Compliant' : result.complianceReport.overallStatus === 'partial' ? 'Partially Compliant' : 'Non-Compliant'}
+            <Badge variant={result.complianceReport.overallStatus === 'compliant' ? 'default' : result.complianceReport.overallStatus === 'partially_compliant' ? 'secondary' : 'destructive'}>
+              {result.complianceReport.overallStatus === 'compliant' ? 'Compliant' : result.complianceReport.overallStatus === 'partially_compliant' ? 'Partially Compliant' : 'Non-Compliant'}
             </Badge>
             <span className="text-sm text-muted-foreground">
               Generated: {new Date(result.complianceReport.timestamp).toLocaleDateString()}
