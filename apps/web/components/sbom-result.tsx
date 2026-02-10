@@ -440,7 +440,7 @@ export function SBOMResult({ result }: SBOMResultProps) {
       {/* Project Type Badge */}
       <div className="flex items-center gap-2">
         <Badge variant={result.isMonorepo ? 'default' : 'secondary'}>
-          {result.isMonorepo ? '📦 Monorepo' : '📦 Single Package'}
+          {result.isMonorepo ? 'Monorepo' : 'Single Package'}
         </Badge>
         <span className="text-sm text-muted-foreground">
           {result.packages.length} package{result.packages.length !== 1 ? 's' : ''} analyzed

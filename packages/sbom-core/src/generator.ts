@@ -26,7 +26,7 @@ import {
 } from './types';
 import { detectMonorepo, findAllPackageJsons } from './monorepo';
 
-const TOOL_VERSION = '0.2.1';
+const TOOL_VERSION = '0.3.0';
 
 const DEFAULT_CONFIG: SBOMConfig = {
   includeDevDeps: true,
@@ -692,11 +692,11 @@ function generateMarkdown(result: SBOMResult): string {
     return deps
       .map((d) => {
         const riskBadgeStr = d.risk ? riskBadge(d.risk.riskLevel) : '';
-        const licenseBadge = d.licenseProblematic ? `⚠️ ${d.license}` : d.license;
+        const licenseBadge = d.licenseProblematic ? `[!] ${d.license}` : d.license;
         const vulnBadge = d.vulnerabilities && d.vulnerabilities.length > 0
-          ? `⚠️ ${d.vulnerabilities.length}`
-          : '✅';
-        const deprecatedBadge = d.deprecated ? ' ⛔' : '';
+          ? `[!] ${d.vulnerabilities.length}`
+          : 'None';
+        const deprecatedBadge = d.deprecated ? ' [DEPRECATED]' : '';
 
         return `| [${escapeHtml(d.name)}](https://www.npmjs.com/package/${d.name})${deprecatedBadge} | ${escapeHtml(d.version)} | ${escapeHtml(d.description)} | ${escapeHtml(licenseBadge)} | [${d.securityScore}](https://snyk.io/advisor/npm-package/${d.name}) | ${vulnBadge} | ${riskBadgeStr} | [${d.minifiedSize} KB](https://bundlephobia.com/package/${d.name}@${d.version}) | ${escapeHtml(d.lastPublishDate)} |`;
       })
@@ -710,7 +710,7 @@ function generateMarkdown(result: SBOMResult): string {
 
     // Vulnerability summary
     if (insights.vulnerabilitySummary.total > 0) {
-      insightsText += `### 🛡️ Vulnerability Summary\n\n`;
+      insightsText += `### Vulnerability Summary\n\n`;
       insightsText += `| Severity | Count |\n`;
       insightsText += `| -------- | ----- |\n`;
       insightsText += `| Critical | ${insights.vulnerabilitySummary.critical} |\n`;
@@ -721,7 +721,7 @@ function generateMarkdown(result: SBOMResult): string {
     }
 
     if (insights.topRisks.length > 0) {
-      insightsText += `### 🚨 Top Security Risks\n\n`;
+      insightsText += `### Top Security Risks\n\n`;
       insightsText += `| Package | Risk Score | Factors |\n`;
       insightsText += `| ------- | --------- | ------- |\n`;
       insights.topRisks.forEach((risk: { name: string; score: number; factors: string[] }) => {
@@ -731,7 +731,7 @@ function generateMarkdown(result: SBOMResult): string {
     }
 
     if (insights.heaviestDependencies.length > 0) {
-      insightsText += `### 📦 Largest Dependencies\n\n`;
+      insightsText += `### Largest Dependencies\n\n`;
       insightsText += `| Package | Size | Gzipped |\n`;
       insightsText += `| ------- | ---- | ------- |\n`;
       insights.heaviestDependencies.forEach((dep: { name: string; size: number; gzipSize: number }) => {
@@ -742,7 +742,7 @@ function generateMarkdown(result: SBOMResult): string {
     }
 
     if (insights.quickWins && insights.quickWins.length > 0) {
-      insightsText += `### ✅ Quick Wins (Easy Updates)\n\n`;
+      insightsText += `### Quick Wins (Easy Updates)\n\n`;
       insightsText += `These packages can be easily updated to improve security:\n\n`;
       insightsText += `| Package | Current | Latest | Security Score |\n`;
       insightsText += `| ------- | ------- | ------ | -------------- |\n`;
@@ -753,7 +753,7 @@ function generateMarkdown(result: SBOMResult): string {
     }
 
     if (insights.licenseIssues.length > 0) {
-      insightsText += `### ⚖️ License Concerns\n\n`;
+      insightsText += `### License Concerns\n\n`;
       insightsText += `The following packages use licenses that may require special attention:\n\n`;
       insights.licenseIssues.forEach((issue: { name: string; license: string }) => {
         insightsText += `- **${escapeHtml(issue.name)}**: ${escapeHtml(issue.license)}\n`;
@@ -762,7 +762,7 @@ function generateMarkdown(result: SBOMResult): string {
     }
 
     if (insights.deprecatedPackages.length > 0) {
-      insightsText += `### ⛔ Deprecated Packages\n\n`;
+      insightsText += `### Deprecated Packages\n\n`;
       insightsText += `The following packages are deprecated and should be replaced:\n\n`;
       insights.deprecatedPackages.forEach((pkg) => {
         insightsText += `- **${escapeHtml(pkg.name)}** (${escapeHtml(pkg.version)}): ${escapeHtml(pkg.reason)}\n`;
@@ -771,7 +771,7 @@ function generateMarkdown(result: SBOMResult): string {
     }
 
     if (insights.abandonedPackages.length > 0) {
-      insightsText += `### 🏚️ Potentially Abandoned Packages\n\n`;
+      insightsText += `### Potentially Abandoned Packages\n\n`;
       insightsText += `These packages haven't been updated in over 2 years:\n\n`;
       insights.abandonedPackages.forEach((pkg: { name: string; lastUpdate: string; daysSince: number }) => {
         insightsText += `- **${escapeHtml(pkg.name)}**: Last updated ${escapeHtml(pkg.lastUpdate)} (${pkg.daysSince} days ago)\n`;
@@ -784,8 +784,8 @@ function generateMarkdown(result: SBOMResult): string {
 
   let markdown = `# Software Bill of Materials (SBOM)\n\n`;
   markdown += `Last updated: ${new Date().toLocaleString()}\n\n`;
-  markdown += `${isMonorepo ? '📦 **Monorepo Project**' : '📦 **Single Package Project**'}\n\n`;
-  markdown += `> 🤖 This documentation is auto-generated by [Bill of Material](https://billofmaterial.dev)\n\n`;
+  markdown += `${isMonorepo ? '**Monorepo Project**' : '**Single Package Project**'}\n\n`;
+  markdown += `> This documentation is auto-generated by [Bill of Material](https://billofmaterial.dev)\n\n`;
 
   // Coverage declaration
   if (result.coverage) {
@@ -793,7 +793,7 @@ function generateMarkdown(result: SBOMResult): string {
   }
 
   if (insights) {
-    markdown += `## 📊 Executive Summary\n\n`;
+    markdown += `## Executive Summary\n\n`;
     markdown += `- **Total Dependencies:** ${insights.metrics.totalDependencies} (${insights.metrics.productionDependencies} production, ${insights.metrics.devDependencies} dev)\n`;
     markdown += `- **Average Security Score:** ${insights.metrics.averageSecurityScore}/100\n`;
     const totalMB = insights.totalBundleSize / 1024;
@@ -816,13 +816,13 @@ function generateMarkdown(result: SBOMResult): string {
     }
     markdown += `\n`;
 
-    markdown += `## 🎯 Key Insights & Actions\n\n`;
+    markdown += `## Key Insights & Actions\n\n`;
     markdown += formatInsights();
   }
 
   // Known Unknowns section
   if (result.knownUnknowns && result.knownUnknowns.length > 0) {
-    markdown += `\n## ⚠️ Known Unknowns\n\n`;
+    markdown += `\n## Known Unknowns\n\n`;
     markdown += `The following components could not be fully analyzed:\n\n`;
     markdown += `| Package | Version | Reason | Category |\n`;
     markdown += `| ------- | ------- | ------ | -------- |\n`;
@@ -836,7 +836,7 @@ function generateMarkdown(result: SBOMResult): string {
   if (result.auditData && result.auditData.advisories) {
     const advisoriesCount = Object.keys(result.auditData.advisories).length;
     if (advisoriesCount > 0) {
-      markdown += `\n## 🔒 Security Audit\n\n`;
+      markdown += `\n## Security Audit\n\n`;
       markdown += `### Summary\n\n`;
       markdown += `| Severity  | Count |\n`;
       markdown += `| --------- | ----- |\n`;
@@ -867,7 +867,7 @@ function generateMarkdown(result: SBOMResult): string {
 
   // Outdated Packages Section
   if (result.outdatedPackages && Object.keys(result.outdatedPackages).length > 0) {
-    markdown += `\n## 📅 Outdated Packages\n\n`;
+    markdown += `\n## Outdated Packages\n\n`;
     markdown += `The following packages have newer versions available:\n\n`;
     markdown += `| Package | Current | Wanted | Latest |\n`;
     markdown += `| ------- | ------- | ------ | ------ |\n`;
@@ -900,7 +900,7 @@ function generateMarkdown(result: SBOMResult): string {
 
   // Compliance Report
   if (result.complianceReport) {
-    markdown += `\n## 📋 ISO 27001 Compliance Report\n\n`;
+    markdown += `\n## ISO 27001 Compliance Report\n\n`;
     markdown += `**Standard:** ${result.complianceReport.standard}\n`;
     markdown += `**Status:** ${result.complianceReport.overallStatus.replace('_', ' ').toUpperCase()}\n`;
     markdown += `**Assessment:** ${result.complianceReport.summary.passed} passed, ${result.complianceReport.summary.warnings} warnings, ${result.complianceReport.summary.failed} failed\n\n`;
@@ -908,7 +908,7 @@ function generateMarkdown(result: SBOMResult): string {
     markdown += `| Control | Status | Description | Findings |\n`;
     markdown += `| ------- | ------ | ----------- | -------- |\n`;
     result.complianceReport.controls.forEach((ctrl) => {
-      const statusIcon = ctrl.status === 'pass' ? '✅' : ctrl.status === 'warning' ? '⚠️' : '❌';
+      const statusIcon = ctrl.status === 'pass' ? 'PASS' : ctrl.status === 'warning' ? 'WARN' : 'FAIL';
       markdown += `| ${ctrl.id} | ${statusIcon} ${ctrl.status.toUpperCase()} | ${escapeHtml(ctrl.name)} | ${ctrl.findings.map(f => escapeHtml(f)).join('; ')} |\n`;
     });
     markdown += `\n`;
